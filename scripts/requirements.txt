@@ -1,0 +1,5 @@
+coloredlogs
+confuse @ git+https://github.com/beetbox/confuse.git
+mido
+python_osc
+python-rtmidi

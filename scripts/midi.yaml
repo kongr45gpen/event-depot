@@ -1,0 +1,5 @@
+midi:
+  input: "X-TOUCH MINI 9"
+  output: "X-TOUCH MINI 9"
+xair:
+  ip: "10.20.0.216"
