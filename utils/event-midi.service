@@ -1,0 +1,19 @@
+[Unit]
+Description=Event Depot MIDI handler
+After=network.target
+
+[Service]
+Type=simple
+# WorkingDirectory should point to the repo root where scripts/midi.py lives
+# Update the WorkingDirectory below if you install somewhere else
+WorkingDirectory=/path/to/event-depot/scripts
+ExecStart=/usr/bin/env python3 /path/to/event-depot/scripts/midi.py
+Restart=always
+RestartSec=5
+# Disable systemd's start rate limiting so restarts never stop
+StartLimitIntervalSec=0
+# Keep logs unbuffered so systemd receives output promptly
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
