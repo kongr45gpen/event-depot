@@ -476,7 +476,7 @@ async def main(argv=None):
 
     midiin = midiout = None
     try:
-        xair = pyxair.XAir(pyxair.XInfo("10.20.0.216", 10024, "IRREL", "IRREL", "IRREL"))
+        xair = pyxair.XAir(pyxair.XInfo(cfg['xair']['ip'].get(str), 10024, "IRREL", "IRREL", "IRREL"))
         await xair.connect()
         xair.enable_remote()
         status = await xair.get("/status")
