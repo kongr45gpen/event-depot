@@ -7,13 +7,13 @@ const $title = document.getElementById("title");
 const $speaker = document.getElementById("speaker");
 
 async function pollOnTime() {
+    let url = params.get("ontime");
+
+    if (!url) {
+        throw new Error("OnTime URL parameter is missing");
+    }
+
     try {
-        let url = params.get("ontime");
-
-        if (!url) {
-            return;
-        }
-
         url = new URL("/api/poll", url).href;
 
         const res = await fetch(url, { cache: "no-store" });
@@ -30,9 +30,9 @@ async function pollOnTime() {
         }
 
         return data;
-
     } catch (err) {
         console.error("OnTime poll failed:", err);
+        throw err;
     }
 }
 
@@ -171,6 +171,21 @@ function updateDomWithPollData(data) {
     } catch (err) {
         console.error("Failed to update DOM with poll data:", err);
     }
+}
+
+function setupOntimePoll() {
+    const intervalMs = params.has("interval") ? parseInt(params.get("interval"), 10) : 5000;
+
+    pollOnTime().then((data) => {
+        console.log("Initial ontime data fetch:", data);
+        updateDomWithPollData(data);
+    }).catch((err) => {});
+
+    setInterval(() => {
+        pollOnTime().then((data) => {
+            updateDomWithPollData(data);
+        }).catch((err) => {});
+    }, intervalMs);
 }
 
 (function () {

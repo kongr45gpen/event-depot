@@ -1,0 +1,19 @@
+[Unit]
+# Event Depot server
+Description=Event Depot static file server
+After=network.target
+
+[Service]
+Type=simple
+# Replace the path below with the directory that contains serve.py on the target host
+# WorkingDirectory=/path/to/event-depot
+ExecStart=/usr/bin/env python3 /path/to/event-depot/serve.py
+Restart=on-failure
+RestartSec=2
+SyslogIdentifier=event-depot
+# Optional: set a specific user to run the service (uncomment and set)
+# User=www-data
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

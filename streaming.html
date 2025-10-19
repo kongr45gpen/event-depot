@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Now Then</title>
+    <title>Presentation</title>
 
     <link href="styles/styles.css" rel="stylesheet">
 
@@ -34,16 +34,7 @@
     <script>
         const intervalMs = params.has("interval") ? parseInt(params.get("interval"), 10) : 5000;
 
-        pollOnTime().then((data) => {
-            console.log("Initial ontime data fetch:", data);
-            updateDomWithPollData(data);
-        });
-
-        setInterval(() => {
-            pollOnTime().then((data) => {
-                updateDomWithPollData(data);
-            });
-        }, intervalMs);
+        setupOntimePoll();
     </script>
 
 </body>
