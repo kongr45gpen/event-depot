@@ -4,6 +4,12 @@ midi:
 xair:
   ip: "10.20.0.216"
 
+# Meters:
+# 0-15:  "In 1", "In 2", "In 3", "In 4", "In 5", "In 6", "In 7", "In 8", "In 9", "In 10", "In 11", "In 12", "In 13", "In 14", "In 15", "In 16",
+# 16-25: "Aux L", "Aux R", "FxRtn1 L", "FxRtn1 R", "FxRtn2 L", "FxRtn2 R", "FxRtn3 L", "FxRtn3 R", "FxRtn4 L", "FxRtn4 R",
+# 26-35: "Bus 1", "Bus 2", "Bus 3","Bus 4", "Bus 5", "Bus 6", "FxSnd  1", "FxSnd  2", "FxSnd  3","FxSnd  4",
+# 36-39: "Main L", "Main R", "Mon L", "Mon R"
+
 layers:
   - encoders:
     - "/ch/01/mix/fader"
@@ -24,6 +30,14 @@ layers:
     - "/ch/09/mix/on"
     - "/ch/15/mix/on"
     meters:
+    - 0
+    - 1
+    - 3
+    - 3
+    - 4
+    - 6
+    - 8
+    - 14
     enable_zero: true
     invert_buttons: true
     encoder_style: fan
@@ -47,9 +61,18 @@ layers:
     - null
     - "/lr/mix/on"
     meters:
+    - 26
+    - 27
+    - 28
+    - 29
+    - 30
+    - 31
+    - 36
+    - 37
     enable_zero: false
     invert_buttons: true
     encoder_style: fan
     encoder_sensitivity: 6
 
+meter_threshold: 0.75
 big_fader: "/dca/1/fader"

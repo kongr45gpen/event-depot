@@ -90,6 +90,9 @@ ACTIVE_KEYS = set()
 
 CURRENT_LAYER = 0
 
+METER_CACHE = {}
+
+
 async def create_osc_cache(configuration, xair):
     global OSC_CACHE, ACTIVE_KEYS
 
@@ -292,7 +295,10 @@ async def osc_handler(configuration, xair, midiout):
             try:
                 message = await asyncio.wait_for(stream.get(), timeout=None)
 
-                if message.address in ACTIVE_KEYS:
+                if message.address.startswith("/meters/"):
+                    await handle_meters(message, configuration, midiout)
+                    # logging.debug(f"Number of meters subscribed: {len(message.arguments)}")
+                elif message.address in ACTIVE_KEYS:
                     OSC_CACHE[message.address] = message.arguments[0]
                     osc_to_midi(message.address, message.arguments[0], configuration, midiout)
             except Exception as exc:
@@ -342,7 +348,49 @@ def osc_to_midi(address, value, configuration, midiout):
         logging.debug(f"OSC to MIDI: {address}={value} -> {midi_msg}")
         midiout.send(midi_msg)
 
+async def handle_meters(message, configuration, midiout):
+    global CURRENT_LAYER, METER_CACHE
+
+    current_layer = CURRENT_LAYER
+
+    current_meters = configuration['layers'][current_layer]['meters'].get(confuse.Sequence(confuse.Optional(int)))
+    try:
+        threshold = configuration['meter_threshold'].get(float)
+    except confuse.NotFoundError:
+        threshold = 0.5
+
+    meter_values = []
+    for idx, target in enumerate(current_meters):
+        try:
+            if target is not None:
+                value = message.arguments[target]
+                value = value / 32768.0 + 1
+                meter_values.append(value)
+
+                light_up = value >= threshold
+                
+                if target in METER_CACHE:
+                    if METER_CACHE[target] == light_up:
+                        continue
+                
+                button_index = BUTTON_IXES[ idx + 8 ]
+                midi_msg = mido.Message('note_on', channel=0, note=button_index, velocity=127 if light_up else 0)
+                logging.debug(f"Meter MIDI: meter={target} value={value} -> {midi_msg}")
+                midiout.send(midi_msg)
+
+                METER_CACHE[target] = light_up
+            else:
+                meter_values.append(0)
+        except Exception as exc:
+            logging.error(f"Failed to handle meter {target}: {exc}")
+
+    # logging.debug(f"Meter values: {meter_values}")
+
 async def clear_midi(midiout):
+    global METER_CACHE
+
+    METER_CACHE = {}
+
     for ix in BUTTON_IXES:
         midi_msg = mido.Message('note_on', channel=0, note=ix, velocity=0)
         midiout.send(midi_msg)
@@ -381,11 +429,16 @@ def load_config(path: Path):
         cfg.set_file(str(path))
     return cfg
 
-async def my_awesome_print_something_every_1_second_task(outputport):
+async def midi_keepalive(outputport):
     while True:
-        print("Hello from my awesome task!")
-        outputport.send(mido.Message('note_on', note=60, velocity=64))
+        # Periodic send message to MIDI to check disconnects
+        outputport.send(mido.Message('note_on', note=0, velocity=0))
         await asyncio.sleep(1)
+
+def critical_error_callback(type, error, data):
+    logging.critical(f"Critical error in MIDI processing: {type} - {error} - {data}")
+    print(f"Cannot continue processing MIDI due to a critical error. Please try again by restarting.")
+    exit(5)
 
 async def main(argv=None):
     parser = argparse.ArgumentParser(description="MIDI monitor using mido + confuse config + coloredlogs")
@@ -433,13 +486,18 @@ async def main(argv=None):
 
         try:
             logging.info("Opening input  '%s'", input_name)
-            input = mido.open_input(input_name, callback=cb)
+            midiin = mido.open_input(input_name, callback=cb)
 
             logging.info("Opening output '%s'", output_name)
             midiout = mido.open_output(output_name)
         except (IOError, OSError) as exc:
             logging.error("Failed to open MIDI device '%s': %s", input_name, exc)
             raise
+
+        midiin._rt.set_error_callback(critical_error_callback)
+        midiout._rt.set_error_callback(critical_error_callback)
+
+        xair.enable_meter(1)
 
         xair_task = xair.start()
 
@@ -459,7 +517,7 @@ async def main(argv=None):
             xair_task,
             osc_task,
             # midi_task,
-            # my_awesome_print_something_every_1_second_task(midiout)
+            midi_keepalive(midiout)
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
