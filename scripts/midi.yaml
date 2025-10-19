@@ -27,6 +27,7 @@ layers:
     enable_zero: true
     invert_buttons: true
     encoder_style: fan
+    encoder_sensitivity: 6
   - encoders:
     - "/bus/1/mix/fader"
     - "/bus/2/mix/fader"
@@ -49,3 +50,4 @@ layers:
     enable_zero: false
     invert_buttons: true
     encoder_style: fan
+    encoder_sensitivity: 6

@@ -192,6 +192,26 @@ async def handle_midi_input(input, configuration, xair, midiout):
             if address:
                 value = not OSC_CACHE.get(address, False)
                 xair.put(address, [int(value)])
+    elif isinstance(input, EncoderInput):
+        layer = configuration['layers'][CURRENT_LAYER]
+        encoders = layer['encoders'].get(confuse.Sequence(confuse.Optional(str)))
+
+        address = encoders[input.index]
+        if address:
+            sensitivity = layer['encoder_sensitivity'].get(float)
+            current_value = (await xair.get(address)).arguments[0]
+
+            new_value = current_value + input.diff * sensitivity / 1000.0
+
+            # Implement a "detent"
+            if abs(new_value - 0.75) < (sensitivity / 1500.0):
+                new_value = 0.75
+
+            delta = new_value - current_value
+
+            logging.debug(f"MIDI to OSC: {input} -> {address}={new_value} (Δ = {delta})")
+
+            xair.put(address, [ new_value ])
 
 
 def make_stream():
@@ -295,9 +315,19 @@ def osc_to_midi(address, value, configuration, midiout):
         logging.debug(f"OSC to MIDI: {address}={value} -> {midi_msg}")
         midiout.send(midi_msg)
 
+async def clear_midi(midiout):
+    for ix in BUTTON_IXES:
+        midi_msg = mido.Message('note_on', channel=0, note=ix, velocity=0)
+        midiout.send(midi_msg)
+    for encoder in range(8):
+        control = 48 + encoder
+        midi_msg = mido.Message('control_change', channel=0, control=control, value=0)
+        midiout.send(midi_msg)
+
 async def refresh_layer_with_cache(configuration, midiout):
     global OSC_CACHE
 
+    await clear_midi(midiout)
     logging.info("Refreshing values to MIDI")
 
     for key, value in OSC_CACHE.items():
