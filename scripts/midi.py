@@ -71,6 +71,8 @@ BUTTON_IXES = [
     87, 88, 91, 92, 86, 93, 94, 95
 ]
 
+LAYER_BUTTONS = [84, 85]
+
 ENCODER_STYLES = {
     "single": (1, 11),
     "trim": (17, 9),
@@ -88,6 +90,8 @@ async def create_osc_cache(configuration, xair):
     global OSC_CACHE, ACTIVE_KEYS
 
     keys = []
+
+    xair._cache = {}
     
     layers = configuration['layers']
     for layer in layers:
@@ -120,6 +124,13 @@ class ButtonInput:
 
     def __repr__(self):
         return f"ButtonInput(row={self.row}, col={self.col})"
+    
+class LayerSwitchInput:
+    def __init__(self, layer_index):
+        self.layer_index = layer_index
+
+    def __repr__(self):
+        return f"LayerSwitchInput(layer_index={self.layer_index})"
 
 def midi_to_input(message):
     if message.type == 'control_change':
@@ -131,6 +142,10 @@ def midi_to_input(message):
     elif message.type == 'note_on':
         if message.velocity != 127:
             return None
+        
+        if message.note in LAYER_BUTTONS:
+            layer_index = LAYER_BUTTONS.index(message.note)
+            return LayerSwitchInput(layer_index=layer_index)
 
         if message.note in BUTTON_IXES:
             ix = BUTTON_IXES.index(message.note)
@@ -143,6 +158,14 @@ def midi_to_input(message):
             return ButtonInput(zero_index_row=0, zero_index_col=index)
     logging.warning("Unhandled MIDI message: %s", message)
     return None
+
+async def handle_midi_input(input, configuration, xair, midiout):
+    global CURRENT_LAYER
+
+    if isinstance(input, LayerSwitchInput):
+        new_layer = input.layer_index
+        await create_osc_cache(configuration, xair)
+        await switch_layer(new_layer, configuration, midiout)
 
 def make_stream():
     loop = asyncio.get_event_loop()
@@ -157,14 +180,20 @@ def make_stream():
 
     return callback, stream()
 
-async def monitor_midi(stream):
+async def monitor_midi(stream, output_queue: asyncio.Queue):
     async for message in stream:
         try:
             input_event = midi_to_input(message)
             logging.debug(f"MIDI IN: {message} -> {input_event}")
+            await output_queue.put(input_event)
         except Exception as exc:
             logging.error("Failed to process MIDI message %s: %s", message, exc)
             continue
+
+async def midi_event_handler(configuration, xair, midiout, queue):
+    while True:
+        input_event = await queue.get()
+        await handle_midi_input(input_event, configuration, xair, midiout)
 
 async def osc_queue(queue):
     while True:
@@ -181,8 +210,6 @@ async def osc_queue(queue):
 
 async def osc_handler(configuration, xair, midiout):
     with xair.subscribe(meters=True) as stream:
-        # async for message in osc_queue(stream):
-            # osc_to_midi(message, configuration, midiout)
         while True:
             try:
                 message = await asyncio.wait_for(stream.get(), timeout=None)
@@ -237,11 +264,28 @@ def osc_to_midi(address, value, configuration, midiout):
         logging.debug(f"OSC to MIDI: {address}={value} -> {midi_msg}")
         midiout.send(midi_msg)
 
-def refresh_layer_with_cache(configuration, midiout):
+async def refresh_layer_with_cache(configuration, midiout):
     global OSC_CACHE
+
+    logging.info("Refreshing values to MIDI")
 
     for key, value in OSC_CACHE.items():
         osc_to_midi(key, value, configuration, midiout)
+
+async def switch_layer(new_layer, configuration, midiout):
+    global CURRENT_LAYER
+
+    CURRENT_LAYER = new_layer
+    logging.info(f"Switching to layer {CURRENT_LAYER}")
+
+    for ix, button in enumerate(LAYER_BUTTONS):
+        note = button
+        velocity = 127 if ix == CURRENT_LAYER else 0
+        midi_msg = mido.Message('note_on', channel=0, note=note, velocity=velocity)
+        logging.debug(f"Layer button MIDI: layer={CURRENT_LAYER} -> {midi_msg}")
+        midiout.send(midi_msg)
+
+    await refresh_layer_with_cache(configuration, midiout)
 
 def load_config(path: Path):
     cfg = confuse.Configuration('event-depot', __name__)
@@ -289,6 +333,7 @@ async def main(argv=None):
     input_name = args.input_name or cfg['midi']['input'].get()
     output_name = args.output_name or cfg['midi']['output'].get()
 
+    midiin = midiout = None
     try:
         xair = pyxair.XAir(pyxair.XInfo("10.20.0.216", 10024, "IRREL", "IRREL", "IRREL"))
         await xair.connect()
@@ -297,31 +342,36 @@ async def main(argv=None):
         logger.info("X-Air status: %s", status)
 
         cb, stream = make_stream()
-        midiout = None
 
         try:
             logging.info("Opening input  '%s'", input_name)
-            mido.open_input(input_name, callback=cb)
+            input = mido.open_input(input_name, callback=cb)
 
             logging.info("Opening output '%s'", output_name)
             midiout = mido.open_output(output_name)
         except (IOError, OSError) as exc:
             logging.error("Failed to open MIDI device '%s': %s", input_name, exc)
             raise
-        
+
         xair_task = xair.start()
 
         await create_osc_cache(cfg, xair)
 
-        refresh_layer_with_cache(cfg, midiout)
+        await switch_layer(0, cfg, midiout)
 
         osc_task = asyncio.create_task(osc_handler(cfg, xair, midiout))
 
+        midi_queue = asyncio.Queue()
+        midi_input_task = asyncio.create_task(monitor_midi(stream, midi_queue))
+        midi_handle_task = asyncio.create_task(midi_event_handler(cfg, xair, midiout, midi_queue))
+
         await asyncio.gather(
-            monitor_midi(stream),
+            midi_input_task,
+            midi_handle_task,
             xair_task,
             osc_task,
-            # my_awesome_print_something_every_1_second_task(outputport)
+            # midi_task,
+            # my_awesome_print_something_every_1_second_task(midiout)
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
@@ -329,6 +379,11 @@ async def main(argv=None):
     except Exception:
         logger.exception("Unhandled error")
         return 4
+    finally:
+        if midiin:
+            midiin.close()
+        if midiout:
+            midiout.close()
 
     return 0
 
