@@ -1,76 +1,227 @@
 @font-face {
-            font-family: 'Exo 2';
-            font-style: normal;
-            font-weight: 100 900;
-            font-display: swap;
-            src: url('../fonts/Exo2-VariableFont_wght.ttf') format('truetype');
-        }
+    font-family: 'Exo 2';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('../fonts/Exo2-VariableFont_wght.ttf') format('truetype');
+}
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
 
-        body {
-            color: white;
-            background: url('../media/BG_BLUE.jpg') no-repeat center center fixed;
-            background-size: cover;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
+body {
+    color: white;
+    background-size: cover;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 
-            font-family: "Exo 2", sans-serif;
-            font-optical-sizing: auto;
-        }
+    font-family: "Exo 2", sans-serif;
+    font-optical-sizing: auto;
+}
 
-        header {
-            padding: 2rem;
-            display: flex;
-            justify-content: left;
-            gap: 1.5rem;
-            align-items: baseline;
-            text-shadow: 0.2vh 0.2vh 1vh rgba(0, 0, 0, 0.5);
-        }
+header {
+    padding: 2rem;
+    display: flex;
+    justify-content: left;
+    gap: 1.5rem;
+    align-items: baseline;
+    text-shadow: 0.2vh 0.2vh 1vh rgba(0, 0, 0, 0.5);
+}
 
-        #title {
-            font-size: 6vh;
-            font-weight: 700;
-            max-width: 70%;
-        }
+#title {
+    font-size: 6vh;
+    font-weight: 700;
+    max-width: 70%;
+}
 
-        #speaker {
-            font-size: 4vh;
-            font-weight: 500;
-            color: #dddddd;
-        }
+#speaker {
+    font-size: 4vh;
+    font-weight: 500;
+    color: #dddddd;
+}
 
-        footer {
-            padding: 2rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
+footer {
+    padding: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
 
-        #logo {
-            height: 20vh;
-            max-width: 5vw;
-            object-fit: contain;
-        }
+#logo {
+    height: 20vh;
+    max-width: 5vw;
+    object-fit: contain;
+}
 
-        #event {
-            font-weight: 700;
-            font-size: 1.25rem;
-        }
+#event {
+    font-weight: 700;
+    font-size: 1.8vh;
+}
 
-        #event-subtitle {
-            font-size: 0.85rem;
-            opacity: 0.8;
-        }
+#event-subtitle {
+    font-size: 1.2vh;
+    opacity: 0.8;
+}
 
-        .event-info {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
+.event-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+main {
+    height: 100%;
+    display: flex;
+    flex-direction: row;
+}
+
+/* --- Left side (Logo + link + Now Playing box) --- */
+.left {
+    width: 50%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2rem;
+}
+
+.logo-block {
+    display: flex;
+    flex-direction: row;
+    gap: 1vw;
+    align-items: center;
+}
+
+.logo-block img {
+    height: 12vh;
+    width: 12vh;
+    /* flex: 0 0 5vh; */
+    object-fit: contain;
+}
+
+.logo-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 1vh;
+
+    text-shadow: 0.2vh 0.2vh 1vh rgba(127, 127, 127, 0.5);
+}
+
+.logo-title {
+    font-size: 4vh;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.logo-link {
+    font-size: 2.5vh;
+    color: #66aaff;
+    text-decoration: none;
+}
+
+.now-playing {
+    background-color: rgba(0, 20, 40, 0.85);
+    padding: 2vh 1.5vw;
+    border-radius: 4px;
+    width: fit-content;
+    font-size: 2vh;
+    min-width: 50%;
+    max-width: 90%;
+}
+
+.now-playing h3 {
+    font-size: 2.5vh;
+    font-weight: 700;
+    margin-bottom: 2vh;
+}
+
+.track-title {
+    font-weight: 600;
+    color: #66aaff;
+    margin-bottom: 0.5vh;
+    text-underline-offset: 3px;
+}
+
+.artist {
+    font-weight: 700;
+    margin-bottom: 2vh;
+}
+
+.license {
+    font-size-adjust: 0.3;
+    opacity: 0.9;
+}
+
+.track-link {
+    font-size-adjust: 0.3;
+    color: #66aaff;
+    text-decoration: none;
+}
+
+.now-next-container {
+    width: 50%;
+    background-color: rgba(90, 90, 90, 0.3);
+    padding: 3vh 4vw;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    overflow: hidden;
+    /* gap: 4rem; */
+}
+
+.session {
+    --session-fs: 4vh;
+
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+
+    text-shadow: 0.2vh 0.2vh 1vh rgba(0, 0, 0, 0.5);
+}
+
+.session-header {
+    display: flex;
+    align-items: center;
+    gap: 2vw;
+    margin-bottom: 1vh;
+}
+
+.session-header h2 {
+    /* larger heading derived from base */
+    font-size: calc(var(--session-fs) * 1.73);
+    font-weight: 800;
+}
+
+.session-time {
+    background: rgba(255, 255, 255, 0.95);;
+    color: black;
+    box-shadow: 0.2vh 0.2vh 1vh rgba(0, 0, 0, 0.3);
+    text-shadow: none;
+    font-weight: 600;
+    font-size: calc(var(--session-fs) * 0.59);
+    padding: 1vh 1vw;
+    border-radius: 2px;
+    margin-top: 0.2vh;
+}
+
+.session-title {
+    font-size: calc(var(--session-fs) * 1);
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.session-speaker {
+    font-size: calc(var(--session-fs) * 0.73);
+    color: #d1e7ff;
+    text-decoration: underline;
+    text-decoration-color: #d1e7ff33;
+    text-underline-offset: 3px;
+}
+
+.next {
+    opacity: 0.8;
+}

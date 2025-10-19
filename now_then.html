@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation</title>
+
+    <link href="styles/styles.css" rel="stylesheet">
+
+    <style>
+        body {
+            background: url('media/earth.jpg') no-repeat center center fixed;
+            background-size: cover;
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="container">
+        <div class="left">
+            <div class="logo-block">
+                <img src="https://placehold.co/256x256/blue/white/png" alt="">
+                <div class="logo-meta">
+                    <div class="logo-title">
+                        Open Source<br>
+                        CubeSat Workshop 2025
+                    </div>
+                    <a href="https://oscw.space" class="logo-link">https://oscw.space</a>
+                </div>
+            </div>
+
+            <div class="now-playing">
+                <h3>Now Playing</h3>
+                <div class="track-title">Oufos</div>
+                <div class="artist">Bambis Testmantroufos</div>
+                <div class="license">License: CC BY SA 4.0</div>
+                <a class="track-link" href="https://bambis.bandcamp.com/oufos">
+                    https://bambis.bandcamp.com/oufos
+                </a>
+            </div>
+        </div>
+
+        <div class="now-next-container">
+            <div class="session now" id="now">
+                <div class="session-header">
+                    <h2>Now</h2>
+                    <div class="session-time" id="now.time">11:00 – 11:20</div>
+                </div>
+                <div class="session-title" id="now.title">
+                    The Title Of The Talk Or Lightning Talk Or Workshop
+                </div>
+                <div class="session-speaker" id="now.speaker">Firstnamepoulos Lastnamepoulos</div>
+            </div>
+
+            <div class="session next" id="next">
+                <div class="session-header">
+                    <h2>Next</h2>
+                    <div class="session-time" id="next.time">11:20 – 11:40</div>
+                </div>
+                <div class="session-title" id="next.title">
+                    The Title Of The Talk Or Lightning Talk Or Workshop
+                </div>
+                <div class="session-speaker" id="next.speaker">Firstnamepoulos Lastnamepoulos</div>
+            </div>
+        </div>
+    </main>
+
+    <script src="assets/gsap.min.js"></script>
+    <script src="assets/TextPlugin.min.js"></script>
+    <script src="scripts/main.js"></script>
+
+    <script>
+        const intervalMs = params.has("interval") ? parseInt(params.get("interval"), 10) : 5000;
+
+        pollOnTime().then((data) => {
+            console.log("Initial ontime data fetch:", data);
+            updateDomWithPollData(data);
+        });
+
+        setInterval(() => {
+            pollOnTime().then((data) => {
+                updateDomWithPollData(data);
+            });
+        }, intervalMs);
+    </script>
+
+</body>
+
+</html>
