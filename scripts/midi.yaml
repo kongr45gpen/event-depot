@@ -51,3 +51,5 @@ layers:
     invert_buttons: true
     encoder_style: fan
     encoder_sensitivity: 6
+
+big_fader: "/dca/1/fader"

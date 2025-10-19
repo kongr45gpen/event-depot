@@ -80,6 +80,10 @@ ENCODER_STYLES = {
     "spread": (49, 5),
 }
 
+PITCH_LIMITS = [ -8192, 8096 ]
+
+ZERO_VOLUME = 0.750
+
 OSC_CACHE = {}
 
 ACTIVE_KEYS = set()
@@ -131,6 +135,13 @@ class LayerSwitchInput:
 
     def __repr__(self):
         return f"LayerSwitchInput(layer_index={self.layer_index})"
+    
+class FaderInput:
+    def __init__(self, value):
+        self.value = value
+
+    def __repr__(self):
+        return f"FaderInput(value={self.value})"
 
 def midi_to_input(message):
     if message.type == 'control_change':
@@ -156,6 +167,11 @@ def midi_to_input(message):
             # Top encoder push
             index = message.note - 32
             return ButtonInput(zero_index_row=0, zero_index_col=index)
+    elif message.type == 'pitchwheel':
+        min_pitch, max_pitch = PITCH_LIMITS
+        value = (message.pitch - min_pitch) / (max_pitch - min_pitch)
+        return FaderInput(value=value)
+
     logging.warning("Unhandled MIDI message: %s", message)
     return None
 
@@ -182,7 +198,7 @@ async def handle_midi_input(input, configuration, xair, midiout):
 
             address = encoders[input.col]
             if address:
-                xair.put(address, [ 0.750 ])
+                xair.put(address, [ ZERO_VOLUME ])
         elif input.row == 1:
             # Top button push
             layer = configuration['layers'][CURRENT_LAYER]
@@ -204,14 +220,25 @@ async def handle_midi_input(input, configuration, xair, midiout):
             new_value = current_value + input.diff * sensitivity / 1000.0
 
             # Implement a "detent"
-            if abs(new_value - 0.75) < (sensitivity / 1500.0):
-                new_value = 0.75
+            if abs(new_value - ZERO_VOLUME) < (sensitivity / 1500.0):
+                new_value = ZERO_VOLUME
 
             delta = new_value - current_value
 
             logging.debug(f"MIDI to OSC: {input} -> {address}={new_value} (Δ = {delta})")
 
             xair.put(address, [ new_value ])
+    elif isinstance(input, FaderInput):
+        fader_address = configuration['big_fader'].get(confuse.Optional(str))
+        if fader_address:
+            # Big detent
+            value = input.value
+            if abs(value - ZERO_VOLUME) < 0.025:
+                value = ZERO_VOLUME
+
+            logging.debug(f"MIDI to OSC: {input} -> {fader_address}={value}")
+
+            xair.put(fader_address, [ value ])
 
 
 def make_stream():
