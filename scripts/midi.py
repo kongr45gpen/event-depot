@@ -32,6 +32,24 @@ Main wheel:
 pitchwheel channel=8 pitch=-8192 time=0
 pitchwheel channel=8 pitch=4096 time=0 (75%)
 pitchwheel channel=8 pitch=8064 time=0
+
+Output for Top Encoders (controls 48-55):
+
+Single Mode (only 1 bar)
+Send Control Change, channel : 1, number : 48, value 1
+Send Control Change, channel : 1, number : 48, value 12
+
+Trim (bars from center, pan style)
+Send Control Change, channel : 1, number : 48, value 17
+Send Control Change, channel : 1, number : 48, value 26
+
+Fan:
+Send Control Change, channel : 1, number : 48, value 33
+Send Control Change, channel : 1, number : 48, value 43
+
+Spread:
+Send Control Change, channel : 1, number : 48, value 49
+Send Control Change, channel : 1, number : 48, value 54
 """
 
 import argparse
@@ -44,8 +62,87 @@ import mido
 import confuse
 import coloredlogs
 import pyxair
+import contextlib
 
 DEFAULT_CONFIG = Path(__file__).parent / "midi.yaml"
+
+BUTTON_IXES = [
+    89, 90, 40, 41, 42, 43, 44, 45,
+    87, 88, 91, 92, 86, 93, 94, 95
+]
+
+ENCODER_STYLES = {
+    "single": (1, 11),
+    "trim": (17, 9),
+    "fan": (33, 10),
+    "spread": (49, 5),
+}
+
+OSC_CACHE = {}
+
+ACTIVE_KEYS = set()
+
+CURRENT_LAYER = 0
+
+async def create_osc_cache(configuration, xair):
+    global OSC_CACHE, ACTIVE_KEYS
+
+    keys = []
+    
+    layers = configuration['layers']
+    for layer in layers:
+        keys += layer['encoders'].get(confuse.Sequence(confuse.Optional(str)))
+        keys += layer['buttons'].get(confuse.Sequence(confuse.Optional(str)))
+    
+    for key in keys:
+        if key:
+            ACTIVE_KEYS.add(key)
+            try:
+                message = await xair.get(key)
+                OSC_CACHE[key] = message.arguments[0]
+            except Exception as exc:
+                logging.error(f"Failed to get initial OSC value for {key}: {exc}")
+    
+    logging.debug(f"Initialized OSC cache with: {OSC_CACHE}")
+
+class EncoderInput:
+    def __init__(self, zero_index: int, diff: float):
+        self.index = zero_index
+        self.diff = diff
+
+    def __repr__(self):
+        return f"EncoderInput(index={self.index}, diff={self.diff})"
+    
+class ButtonInput:
+    def __init__(self, zero_index_row, zero_index_col):
+        self.row = zero_index_row
+        self.col = zero_index_col
+
+    def __repr__(self):
+        return f"ButtonInput(row={self.row}, col={self.col})"
+
+def midi_to_input(message):
+    if message.type == 'control_change':
+        index = message.control - 16
+        diff = message.value
+        if diff > 64:
+            diff = - (diff - 64)
+        return EncoderInput(zero_index=index, diff=diff)
+    elif message.type == 'note_on':
+        if message.velocity != 127:
+            return None
+
+        if message.note in BUTTON_IXES:
+            ix = BUTTON_IXES.index(message.note)
+            row = ix // 8 + 1
+            col = ix % 8
+            return ButtonInput(zero_index_row=row, zero_index_col=col)
+        elif message.note >= 32 and message.note <= 39:
+            # Top encoder push
+            index = message.note - 32
+            return ButtonInput(zero_index_row=0, zero_index_col=index)
+    logging.warning("Unhandled MIDI message: %s", message)
+    return None
 
 def make_stream():
     loop = asyncio.get_event_loop()
@@ -60,29 +157,91 @@ def make_stream():
 
     return callback, stream()
 
-async def monitor_midi(input_name: str, output=None):
-    logger = logging.getLogger("midi")
-    cb, stream = make_stream()
-
-    try:
-        logger.info("Opening input '%s'", input_name)
-        mido.open_input(input_name, callback=cb)
-    except (IOError, OSError) as exc:
-        logger.error("Failed to open MIDI input '%s': %s", input_name, exc)
-        raise
-
-    if output is not None:
-        logger.info("Output device available: %s", getattr(output, 'name', str(output)))
-
+async def monitor_midi(stream):
     async for message in stream:
-        logger.debug("MIDI IN: %s", message)
+        try:
+            input_event = midi_to_input(message)
+            logging.debug(f"MIDI IN: {message} -> {input_event}")
+        except Exception as exc:
+            logging.error("Failed to process MIDI message %s: %s", message, exc)
+            continue
 
-async def my_amazing_loop_that_prints_something_every_second():
-    logger = logging.getLogger("midi")
+async def osc_queue(queue):
     while True:
-        logger.info("Hello from the amazing loop!")
-        await asyncio.sleep(1)
+        try:
+            message = await asyncio.wait_for(queue.get(), timeout=None)
 
+            if message.address in ACTIVE_KEYS:
+                OSC_CACHE[message.address] = message.arguments[0]
+                yield message
+        except Exception as exc:
+            logging.error(f"Failed to process OSC message: {exc}")
+            await asyncio.sleep(0.2)
+            continue
+
+async def osc_handler(configuration, xair, midiout):
+    with xair.subscribe(meters=True) as stream:
+        # async for message in osc_queue(stream):
+            # osc_to_midi(message, configuration, midiout)
+        while True:
+            try:
+                message = await asyncio.wait_for(stream.get(), timeout=None)
+
+                if message.address in ACTIVE_KEYS:
+                    OSC_CACHE[message.address] = message.arguments[0]
+                    osc_to_midi(message.address, message.arguments[0], configuration, midiout)
+            except Exception as exc:
+                logging.error(f"Failed to process OSC message in handler: {exc}")
+                await asyncio.sleep(0.2)
+
+def osc_to_midi(address, value, configuration, midiout):
+    global OSC_CACHE, CURRENT_LAYER
+
+    layer = configuration['layers'][CURRENT_LAYER]
+
+    buttons = layer['buttons'].get(confuse.Sequence(confuse.Optional(str)))
+    encoders = layer['encoders'].get(confuse.Sequence(confuse.Optional(str)))
+
+    if address in buttons:
+        ix = buttons.index(address)
+        note = BUTTON_IXES[ix]
+
+        try:
+            if layer['invert_buttons'].get(bool):
+                value = not value
+        except confuse.NotFoundError:
+            pass
+
+        velocity = 127 if value else 0
+        midi_msg = mido.Message('note_on', channel=0, note=note, velocity=velocity)
+        logging.debug(f"OSC to MIDI: {address}={value} -> {midi_msg}")
+        midiout.send(midi_msg)
+    
+    if address in encoders:
+        ix = encoders.index(address)
+
+        try:
+            style_name = layer['encoder_style'].get(str)
+            base, span = ENCODER_STYLES[style_name]
+        except confuse.NotFoundError:
+            base, span = ENCODER_STYLES['single']
+        except KeyError:
+            base, span = ENCODER_STYLES['single']
+            logging.warning(f"Unknown encoder style: {style_name}")
+
+        control = 48 + ix
+
+        new_value = base + max(0, min(span, round(value * span)))
+
+        midi_msg = mido.Message('control_change', channel=0, control=control, value=new_value)
+        logging.debug(f"OSC to MIDI: {address}={value} -> {midi_msg}")
+        midiout.send(midi_msg)
+
+def refresh_layer_with_cache(configuration, midiout):
+    global OSC_CACHE
+
+    for key, value in OSC_CACHE.items():
+        osc_to_midi(key, value, configuration, midiout)
 
 def load_config(path: Path):
     cfg = confuse.Configuration('event-depot', __name__)
@@ -90,6 +249,11 @@ def load_config(path: Path):
         cfg.set_file(str(path))
     return cfg
 
+async def my_awesome_print_something_every_1_second_task(outputport):
+    while True:
+        print("Hello from my awesome task!")
+        outputport.send(mido.Message('note_on', note=60, velocity=64))
+        await asyncio.sleep(1)
 
 async def main(argv=None):
     parser = argparse.ArgumentParser(description="MIDI monitor using mido + confuse config + coloredlogs")
@@ -126,22 +290,38 @@ async def main(argv=None):
     output_name = args.output_name or cfg['midi']['output'].get()
 
     try:
-        logger.info("Opening output '%s'", output_name)
-        out = mido.open_output(output_name)
-    except (IOError, OSError) as exc:
-        logger.exception("Failed to open MIDI output '%s'", output_name)
-        out = None
-
-    try:
-
         xair = pyxair.XAir(pyxair.XInfo("10.20.0.216", 10024, "IRREL", "IRREL", "IRREL"))
-        pubsub_task = asyncio.create_task(xair.start())
+        await xair.connect()
+        xair.enable_remote()
         status = await xair.get("/status")
-        print(status)
+        logger.info("X-Air status: %s", status)
+
+        cb, stream = make_stream()
+        midiout = None
+
+        try:
+            logging.info("Opening input  '%s'", input_name)
+            mido.open_input(input_name, callback=cb)
+
+            logging.info("Opening output '%s'", output_name)
+            midiout = mido.open_output(output_name)
+        except (IOError, OSError) as exc:
+            logging.error("Failed to open MIDI device '%s': %s", input_name, exc)
+            raise
+        
+        xair_task = xair.start()
+
+        await create_osc_cache(cfg, xair)
+
+        refresh_layer_with_cache(cfg, midiout)
+
+        osc_task = asyncio.create_task(osc_handler(cfg, xair, midiout))
 
         await asyncio.gather(
-            monitor_midi(input_name, output=out),
-            my_amazing_loop_that_prints_something_every_second()
+            monitor_midi(stream),
+            xair_task,
+            osc_task,
+            # my_awesome_print_something_every_1_second_task(outputport)
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

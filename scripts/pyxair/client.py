@@ -5,7 +5,7 @@ import socket
 import struct
 from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta
-from typing import Any, Awaitable, Callable, List, Set
+from typing import Any, Awaitable, Callable, List, Protocol, Set
 
 from .osc import OscMessage, decode, encode
 
@@ -15,12 +15,19 @@ logger = logging.getLogger(__name__)
 class XAir:
     def __init__(self, xinfo):
         self._xinfo = xinfo
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.setblocking(False)
+        # self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock = None
+        # self._sock.setblocking(False)
         self._cache = {}
         self._meters = {}
         self._subscriptions = set()
         self._remote = False
+
+    async def connect(self):
+        loop = asyncio.get_running_loop()
+        self._sock, _ = await loop.create_datagram_endpoint(
+            lambda: self, remote_addr=(self._xinfo.ip, self._xinfo.port)
+        )
 
     @contextlib.contextmanager
     def subscribe(self, meters=True):
@@ -81,7 +88,23 @@ class XAir:
         logger.info("Disabled Meter: %d (%s)", id, channel)
         del self._meters[(id, channel)]
 
-    async def start(self):
+    def datagram_received(self, data, addr):
+        self.refresh()
+        message = decode(data)
+        if message.address.startswith("/meters/"):
+            data = message.arguments[0]
+            message = OscMessage(
+                message.address,
+                struct.unpack(f"<{struct.unpack('<i', data[0:4])[0]}h", data[4:]),
+            )
+        else:
+            logger.debug("Received: %s", message)
+        self._notify(message)
+
+    def start(self):
+        if self._sock is None:
+            raise RuntimeError("Socket is not connected")
+
         logger.info("Monitoring: %s", self._xinfo)
         loop = asyncio.get_running_loop()
 
@@ -101,26 +124,11 @@ class XAir:
                     message = await queue.get()
                     self._cache[message.address] = message
 
-        def receive():
-            self.refresh()
-            message = decode(self._sock.recv(512))
-            if message.address.startswith("/meters/"):
-                data = message.arguments[0]
-                message = OscMessage(
-                    message.address,
-                    struct.unpack(f"<{struct.unpack('<i', data[0:4])[0]}h", data[4:]),
-                )
-            else:
-                logger.info("Received: %s", message)
-            self._notify(message)
-
         refresh_task = asyncio.create_task(refresh())
         cache_task = asyncio.create_task(cache())
-        loop.add_reader(self._sock, receive)
-        try:
-            await asyncio.gather(refresh_task, cache_task)
-        except asyncio.CancelledError:
-            pass
+        # loop.add_reader(self._sock, receive)
+
+        return asyncio.gather(refresh_task, cache_task)
 
     def refresh(self):
         self._seen = datetime.now()
@@ -129,6 +137,9 @@ class XAir:
         return datetime.now() - self._seen > timedelta(seconds=timeout)
 
     def _send(self, message: OscMessage):
+        if self._sock is None:
+            raise RuntimeError("Socket is not connected")
+
         logger.debug("Sending: %s", message)
         self._sock.sendto(encode(message), (self._xinfo.ip, self._xinfo.port))
 
@@ -136,6 +147,17 @@ class XAir:
         for queue, meters in self._subscriptions:
             if meters or not message.address.startswith("/meters/"):
                 queue.put_nowait(message)
+
+    def connection_made(self, transport):
+        logger.debug("Socket created: %s", transport)
+
+    def error_received(self, exc):
+        logger.error("Error received: %s", exc)
+
+    def connection_lost(self, exc):
+        logger.error("Socket closed: %s", exc)
+        self._sock = None
+        
 
     def __repr__(self):
         return f"XAir({repr(self._xinfo)})"

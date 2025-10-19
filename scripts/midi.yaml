@@ -3,3 +3,49 @@ midi:
   output: "X-TOUCH MINI 9"
 xair:
   ip: "10.20.0.216"
+
+layers:
+  - encoders:
+    - "/ch/01/mix/fader"
+    - "/ch/02/mix/fader"
+    - "/ch/03/mix/fader"
+    - "/ch/04/mix/fader"
+    - "/ch/05/mix/fader"
+    - "/ch/07/mix/fader"
+    - "/ch/09/mix/fader"
+    - "/ch/15/mix/fader"
+    buttons:
+    - "/ch/01/mix/on"
+    - "/ch/02/mix/on"
+    - "/ch/03/mix/on"
+    - "/ch/04/mix/on"
+    - "/ch/05/mix/on"
+    - "/ch/07/mix/on"
+    - "/ch/09/mix/on"
+    - "/ch/15/mix/on"
+    meters:
+    enable_zero: true
+    invert_buttons: true
+    encoder_style: fan
+  - encoders:
+    - "/bus/1/mix/fader"
+    - "/bus/2/mix/fader"
+    - "/bus/3/mix/fader"
+    - "/bus/4/mix/fader"
+    - "/bus/5/mix/fader"
+    - null
+    - null
+    - "/lr/mix/fader"
+    buttons:
+    - "/bus/1/mix/on"
+    - "/bus/2/mix/on"
+    - "/bus/3/mix/on"
+    - "/bus/4/mix/on"
+    - "/bus/5/mix/on"
+    - null
+    - null
+    - "/lr/mix/on"
+    meters:
+    enable_zero: false
+    invert_buttons: true
+    encoder_style: fan
