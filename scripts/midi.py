@@ -160,12 +160,39 @@ def midi_to_input(message):
     return None
 
 async def handle_midi_input(input, configuration, xair, midiout):
-    global CURRENT_LAYER
+    global CURRENT_LAYER, OSC_CACHE
 
     if isinstance(input, LayerSwitchInput):
         new_layer = input.layer_index
         await create_osc_cache(configuration, xair)
         await switch_layer(new_layer, configuration, midiout)
+    elif isinstance(input, ButtonInput):
+        if input.row == 0:
+            # Top encoder push
+            try:
+                # Check if top encoder enabled
+                enabled = configuration['layers'][CURRENT_LAYER]['enable_zero'].get(bool)
+                if not enabled:
+                    return
+            except confuse.NotFoundError:
+                return
+
+            layer = configuration['layers'][CURRENT_LAYER]
+            encoders = layer['encoders'].get(confuse.Sequence(confuse.Optional(str)))
+
+            address = encoders[input.col]
+            if address:
+                xair.put(address, [ 0.750 ])
+        elif input.row == 1:
+            # Top button push
+            layer = configuration['layers'][CURRENT_LAYER]
+            buttons = layer['buttons'].get(confuse.Sequence(confuse.Optional(str)))
+
+            address = buttons[input.col]
+            if address:
+                value = not OSC_CACHE.get(address, False)
+                xair.put(address, [int(value)])
+
 
 def make_stream():
     loop = asyncio.get_event_loop()
@@ -193,7 +220,11 @@ async def monitor_midi(stream, output_queue: asyncio.Queue):
 async def midi_event_handler(configuration, xair, midiout, queue):
     while True:
         input_event = await queue.get()
-        await handle_midi_input(input_event, configuration, xair, midiout)
+        try:
+            await handle_midi_input(input_event, configuration, xair, midiout)
+        except Exception as exc:
+            logging.error(f"Failed to handle MIDI input {input_event}: {exc}")
+            continue
 
 async def osc_queue(queue):
     while True:
