@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation</title>
+
+    <link href="styles/styles.css" rel="stylesheet">
+</head>
+
+<body>
+
+    <header>
+        <div id="title">&nbsp;</div>
+        <div id="speaker">&nbsp;</div>
+    </header>
+
+    <footer>
+        <img id="logo" src="https://placehold.co/256x256/orange/white/png" alt="">
+    </footer>
+
+    <script src="assets/gsap.min.js"></script>
+    <script src="assets/TextPlugin.min.js"></script>
+    <script src="scripts/main.js"></script>
+
+    <script>
+        const intervalMs = params.has("interval") ? parseInt(params.get("interval"), 10) : 5000;
+
+        pollOnTime().then((data) => {
+            console.log("Initial ontime data fetch:", data);
+            updateDomWithPollData(data);
+        });
+
+        setInterval(() => {
+            pollOnTime().then((data) => {
+                updateDomWithPollData(data);
+            });
+        }, intervalMs);
+    </script>
+
+</body>
+
+</html>

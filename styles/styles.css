@@ -1,0 +1,76 @@
+@font-face {
+            font-family: 'Exo 2';
+            font-style: normal;
+            font-weight: 100 900;
+            font-display: swap;
+            src: url('../fonts/Exo2-VariableFont_wght.ttf') format('truetype');
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            color: white;
+            background: url('../media/BG_BLUE.jpg') no-repeat center center fixed;
+            background-size: cover;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+
+            font-family: "Exo 2", sans-serif;
+            font-optical-sizing: auto;
+        }
+
+        header {
+            padding: 2rem;
+            display: flex;
+            justify-content: left;
+            gap: 1.5rem;
+            align-items: baseline;
+            text-shadow: 0.2vh 0.2vh 1vh rgba(0, 0, 0, 0.5);
+        }
+
+        #title {
+            font-size: 6vh;
+            font-weight: 700;
+            max-width: 70%;
+        }
+
+        #speaker {
+            font-size: 4vh;
+            font-weight: 500;
+            color: #dddddd;
+        }
+
+        footer {
+            padding: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        #logo {
+            height: 20vh;
+            max-width: 5vw;
+            object-fit: contain;
+        }
+
+        #event {
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        #event-subtitle {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .event-info {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
