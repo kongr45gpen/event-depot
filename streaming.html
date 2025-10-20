@@ -47,9 +47,7 @@
 
             socket.on('livedata', (data) => {
                 console.log('Received livedata:', data);
-                // Update your presentation based on the received data
-                //updatePresentation(data);
-                document.getElementById('big-box').style.width = data.big_box + 'vw';
+                document.getElementById('big-box').style.width = data.big_box * data.big_box_aspect_ratio + 'vh';
                 document.getElementById('big-box').style.height = data.big_box + 'vh';
 
                 if (data.big_box <= 0.1 || data.big_box == null || data.big_box >= 99.9) {

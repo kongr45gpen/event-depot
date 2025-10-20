@@ -2,6 +2,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+import json
 
 from flask import Flask, send_from_directory, request, redirect, url_for, Response, jsonify
 from flask_socketio import SocketIO, emit
@@ -19,9 +20,11 @@ class LiveData:
     def __init__(self):
         self.boxes = []
         self.big_box = None
-    
+        self.big_box_aspect_ratio = 16/9
+        self._persist_path = None
+
     def to_dict(self):
-        return {"boxes": self.boxes, "big_box": self.big_box}
+        return {"boxes": self.boxes, "big_box": self.big_box, "big_box_aspect_ratio": self.big_box_aspect_ratio}
 
     def update_from(self, data):
         if not isinstance(data, dict):
@@ -56,6 +59,28 @@ class LiveData:
                 raise ValueError("Your big box is unacceptable.")
 
             self.big_box = size
+        
+        if 'big_box_aspect_ratio' in data:
+            self.big_box_aspect_ratio = float(data.get('big_box_aspect_ratio'))
+
+            if self.big_box_aspect_ratio <= 0.001 or self.big_box_aspect_ratio > 100:
+                raise ValueError("Your big box is not doing very well.")
+
+    def save(self) -> None:
+        try:
+            data = self.to_dict()
+            with self._persist_path.open('w', encoding='utf-8') as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
+        except Exception:
+            logging.getLogger('server').exception('Failed to save LiveData')
+
+    def load(self) -> None:
+        try:
+            with self._persist_path.open('r', encoding='utf-8') as fh:
+                data = json.load(fh)
+                self.update_from(data)
+        except Exception:
+            logging.getLogger('server').exception('Failed to load persisted LiveData')
 
     def __str__(self):
         return f"LiveData(boxes={self.boxes}, big_box={self.big_box})"
@@ -95,6 +120,14 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # Global LiveData instance
 live_data = LiveData()
 
+# Configure persistence file and load existing data if any
+try:
+    persist_file = directory_path / 'livedata.json'
+    live_data._persist_path = persist_file
+    live_data.load()
+except Exception:
+    logger.exception('Failed to initialize persisted LiveData')
+
 
 @app.route('/api/set', methods=['POST'])
 def api_update_livedata():
@@ -117,6 +150,11 @@ def api_update_livedata():
         socketio.emit('livedata', live_data.to_dict())
     except Exception:
         logger.exception('Failed to emit livedata')
+
+    try:
+        live_data.save()
+    except Exception:
+        logging.getLogger('server').warning('Failed to persist LiveData')
 
     return jsonify({}), 200
 
