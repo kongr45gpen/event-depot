@@ -10,6 +10,8 @@ async function pollOnTime() {
     let url = params.get("ontime");
 
     if (!url) {
+        $title.textContent = params_titleOverride ? params_titleOverride : "";
+        $speaker.textContent = params_speakerOverride ? params_speakerOverride : "";
         throw new Error("OnTime URL parameter is missing");
     }
 
@@ -192,6 +194,26 @@ function setupOntimePoll() {
     gsap.registerPlugin(TextPlugin);
 })();
 
+function areDictsRoughlyEqual(arr1, arr2, epsilon = 0.05) {
+    let properties_equal;
+
+    try {
+        const propToFloat = s => (typeof s === 'string' && s.trim().length > 2) ? parseFloat(s.trim().slice(0, -2)) : NaN;
+
+        const keysBox = Object.keys(arr2);
+        const oldNumsBox = _.map(keysBox, k => propToFloat(arr1[k]));
+        const newNumsBox = _.map(keysBox, k => propToFloat(arr2[k]));
+
+        const zip = rows => rows[0].map((_, c) => rows.map(row => row[c]));
+        properties_equal = _.every(zip([oldNumsBox, newNumsBox]), pair => Math.abs(pair[0] - pair[1]) <= epsilon);
+    } catch (e) {
+        console.warn(e);
+        properties_equal = _.isEqual(arr1, arr2);
+    }
+
+    return properties_equal;
+}
+
 function setBoxes(data, animate = false) {
     const ANIMATION_DURATION = 0.5;
 
@@ -203,29 +225,19 @@ function setBoxes(data, animate = false) {
             height: $bigBox.style.height,
             marginLeft: $bigBox.style.marginLeft,
             marginTop: $bigBox.style.marginTop,
+            opacity: $bigBox.style.opacity + '00',
         };
 
         const new_properties = {
             width: 100.0 * data.big_box * data.big_box_aspect_ratio + 'vh',
             height: 100.0 * data.big_box + 'vh',
-            marginTop: (data.big_box_y) ? 100.0 * ( - data.big_box_y) / 18.0 + 'vh' : '0vh',
+            marginTop: (data.big_box_y) ? 100.0 * (- data.big_box_y) / 18.0 + 'vh' : '0vh',
             marginLeft: (data.big_box_x) ? 100.0 * data.big_box_x / 32.0 + 'vw' : '0vw',
+            opacity: 100,
         };
 
-        // Compact numeric comparison: strip 2-char units, parse floats and compare with epsilon; fallback to _.isEqual
-        const epsilon = 0.05;
-        const propToFloat = s => (typeof s === 'string' && s.trim().length > 2) ? parseFloat(s.trim().slice(0, -2)) : NaN;
-        let properties_equal;
-        try {
-            const keys = Object.keys(new_properties);
-            const oldNums = _.map(keys, k => propToFloat(old_properties[k]));
-            const newNums = _.map(keys, k => propToFloat(new_properties[k]));
-            if (!_.every(_.concat(oldNums, newNums), _.isFinite)) throw new Error('non-numeric');
-            properties_equal = _.every(_.zip(oldNums, newNums), pair => Math.abs(pair[0] - pair[1]) <= epsilon);
-        } catch (e) {
-            properties_equal = _.isEqual(old_properties, new_properties);
-        }
-        const box_invisible = (data.big_box <= 0.01 || data.big_box == null || data.big_box >= 0.999);
+        let properties_equal = areDictsRoughlyEqual(old_properties, new_properties);
+        const box_invisible = (data.big_box <= 0.01 || data.big_box == null || data.big_box >= 9.999);
 
         console.log(
             `Updating big box: old_properties=${JSON.stringify(old_properties)}, new_properties=${JSON.stringify(new_properties)}, ` +
@@ -307,6 +319,7 @@ function setBoxes(data, animate = false) {
             top: $box.style.top,
             width: $box.style.width,
             height: $box.style.height,
+            opacity: $box.style.opacity + '00',
         };
 
         const new_properties = {
@@ -314,27 +327,10 @@ function setBoxes(data, animate = false) {
             top: (top_edge_at * 100).toFixed(4) + 'vh',
             width: (width - 0.002).toFixed(4) * 100 + 'vw',
             height: (height - 0.002).toFixed(4) * 100 + 'vh',
+            opacity: '100',
         };
 
-        const epsilon_box = 0.05;
-        const propToFloatBox = s => (typeof s === 'string' && s.trim().length > 2) ? parseFloat(s.trim().slice(0, -2)) : NaN;
-        let properties_equal;
-        try {
-            const keysBox = Object.keys(new_properties);
-            const oldNumsBox = _.map(keysBox, k => propToFloatBox(old_properties[k]));
-            const newNumsBox = _.map(keysBox, k => propToFloatBox(new_properties[k]));
-
-            console.log(`Old numeric properties for box ${index + 1}:`, oldNumsBox);
-            console.log(`New numeric properties for box ${index + 1}:`, newNumsBox);
-
-            const zip = rows => rows[0].map((_,c) => rows.map(row => row[c]));
-            properties_equal = _.every(zip([oldNumsBox, newNumsBox]), pair => Math.abs(pair[0] - pair[1]) <= epsilon_box);
-
-            console.log(`Properties equal check for box ${index + 1}:`, zip([oldNumsBox, newNumsBox]));
-        } catch (e) {
-            console.warn(e);
-            properties_equal = _.isEqual(old_properties, new_properties);
-        }
+        let properties_equal = areDictsRoughlyEqual(old_properties, new_properties);
         const box_invisible = (size <= 0.01 || size == null || size >= 99.9);
 
         console.log(
@@ -373,8 +369,8 @@ function setBoxes(data, animate = false) {
             }
         }
 
-        
-    const nld_properties = {
+
+        const nld_properties = {
             left: $box.style.left,
             top: $box.style.top,
             width: $box.style.width,

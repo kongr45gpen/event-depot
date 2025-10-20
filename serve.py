@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 
 from flask import Flask, send_from_directory, request, redirect, url_for, Response, jsonify
+import re
 from flask_socketio import SocketIO, emit
 
 
@@ -18,15 +19,18 @@ except Exception:
 
 class LiveData:
     def __init__(self):
-        self.boxes = []
-        self.big_box = None
-        self.big_box_aspect_ratio = 16/9
-        self.big_box_x = None
-        self.big_box_y = None
+        self._data = {
+            'boxes': [],
+            'big_box': None,
+            'big_box_aspect_ratio': 16/9,
+            'big_box_x': None,
+            'big_box_y': None,
+        }
         self._persist_path = None
 
     def to_dict(self):
-        return {"boxes": self.boxes, "big_box": self.big_box, "big_box_aspect_ratio": self.big_box_aspect_ratio, "big_box_x": self.big_box_x, "big_box_y": self.big_box_y}
+        # Return a shallow copy so callers can't mutate internal state directly
+        return dict(self._data)
 
     def update_from(self, data):
         if not isinstance(data, dict):
@@ -44,7 +48,7 @@ class LiveData:
             for idx, box in enumerate(boxes):
                 if not isinstance(box, (list, tuple)):
                     raise TypeError(f"Box at index {idx} must be a list/tuple")
-                vals = [ 0, 0, 1, 0 , 0, 0, 0 ]
+                vals = [0, 0, 1, 0, 0, 0, 0]
                 for i, v in enumerate(box):
                     try:
                         vnum = float(v)
@@ -54,43 +58,29 @@ class LiveData:
                     if len(vals) > 7:
                         raise ValueError(f"You can't fill your boxes with too much stuff.")
                 new_boxes.append(vals)
-    
-            self.boxes = new_boxes
+
+            self._data['boxes'] = new_boxes
 
         if 'big_box' in data:
-            size = float(data.get('big_box'))
+            size = float(data.get('big_box')) if data.get('big_box') is not None else None
 
             if size > 100 or size < 0:
                 raise ValueError("Your big box is unacceptable.")
 
-            self.big_box = size
-        
+            self._data['big_box'] = size
+
         if 'big_box_aspect_ratio' in data:
-            self.big_box_aspect_ratio = float(data.get('big_box_aspect_ratio'))
+            r = float(data.get('big_box_aspect_ratio')) if data.get('big_box_aspect_ratio') is not None else None
 
-            if self.big_box_aspect_ratio <= 0.001 or self.big_box_aspect_ratio > 100:
+            if r <= 0.001 or r > 100:
                 raise ValueError("Your big box is not doing very well.")
-        
+
+            self._data['big_box_aspect_ratio'] = r
+
         if 'big_box_x' in data:
-            self.big_box_x = float(data.get('big_box_x'))
+            self._data['big_box_x'] = float(data.get('big_box_x')) if data.get('big_box_x') is not None else None
         if 'big_box_y' in data:
-            self.big_box_y = float(data.get('big_box_y'))
-
-    def save(self) -> None:
-        try:
-            data = self.to_dict()
-            with self._persist_path.open('w', encoding='utf-8') as fh:
-                json.dump(data, fh, ensure_ascii=False, indent=2)
-        except Exception:
-            logging.getLogger('server').exception('Failed to save LiveData')
-
-    def load(self) -> None:
-        try:
-            with self._persist_path.open('r', encoding='utf-8') as fh:
-                data = json.load(fh)
-                self.update_from(data)
-        except Exception:
-            logging.getLogger('server').exception('Failed to load persisted LiveData')
+            self._data['big_box_y'] = float(data.get('big_box_y')) if data.get('big_box_y') is not None else None
 
     def __str__(self):
         return f"LiveData({self.to_dict()})"
@@ -127,16 +117,104 @@ app = Flask(__name__, static_folder=str(directory_path), static_url_path="")
 # Configure Socket.IO. We allow CORS from anywhere for local development.
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Global LiveData instance
-live_data = LiveData()
+class LiveDataStore:
+    OUTPUT_KEY_RE = re.compile(r'^[A-Za-z0-9-]{1,5}$')
+
+    def __init__(self):
+        # mapping from output key -> LiveData
+        self._data = {}
+        self._current = 'PRV'
+        self._preview = 'PRV'
+        self._persist_path = None
+
+    def validate_key(self, key: str) -> bool:
+        return isinstance(key, str) and bool(self.OUTPUT_KEY_RE.match(key))
+
+    def get_data_at(self, key: str) -> LiveData:
+        if key not in self._data:
+            logging.getLogger('server').info(f'Creating new LiveData for output key: {key}')
+            self._data[key] = LiveData()
+        return self._data[key]
+
+    def set_current_key(self, key: str) -> None:
+        if not self.validate_key(key):
+            raise ValueError('Invalid output key')
+        self._current = key
+
+    def set_preview_key(self, key: str) -> None:
+        if not self.validate_key(key):
+            raise ValueError('Invalid preview output key')
+        self._preview = key
+
+    def get_preview_key(self) -> str:
+        return self._preview
+
+    def swap_current_and_preview(self) -> None:
+        if not isinstance(self._preview, str) or not self.validate_key(self._preview):
+            raise ValueError('No valid preview to transition with')
+        # ensure both outputs exist in store
+        self.get_data_at(self._preview)
+        self.get_data_at(self._current)
+        self._current, self._preview = self._preview, self._current
+
+    def get_current_key(self) -> str:
+        return self._current
+
+    def get_data(self) -> LiveData:
+        return self.get_data_at(self._current)
+
+    def to_persist_dict(self):
+        return {
+            'current': self._current,
+            'preview': self._preview,
+            'outputs': {k: v.to_dict() for k, v in self._data.items()}
+        }
+
+    def save(self) -> None:
+        try:
+            data = self.to_persist_dict()
+            with self._persist_path.open('w', encoding='utf-8') as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
+        except Exception:
+            logging.getLogger('server').exception('Failed to save LiveDataStore')
+
+    def load(self) -> None:
+        try:
+            if not self._persist_path.exists():
+                return
+            with self._persist_path.open('r', encoding='utf-8') as fh:
+                data = json.load(fh)
+                cur = data.get('current', 'PRV')
+                outputs = data.get('outputs', {}) or {}
+                for k, v in outputs.items():
+                    try:
+                        if not self.validate_key(k):
+                            logger.warning('Skipping invalid persisted output key: %s', k)
+                            continue
+                        ld = LiveData()
+                        ld.update_from(v or {})
+                        logging.getLogger('server').debug(f'Loaded persisted LiveData for output {k}: {ld}')
+                        self._data[k] = ld
+                    except Exception:
+                        logger.exception('Failed to load output %s', k)
+                if isinstance(cur, str) and self.validate_key(cur):
+                    self._current = cur
+                preview_val = data.get('preview', 'PRV')
+                if isinstance(preview_val, str) and self.validate_key(preview_val):
+                    self._preview = preview_val
+        except Exception:
+            logging.getLogger('server').exception('Failed to load persisted LiveDataStore')
+
+
+live_store = LiveDataStore()
 
 # Configure persistence file and load existing data if any
 try:
     persist_file = directory_path / 'livedata.json'
-    live_data._persist_path = persist_file
-    live_data.load()
+    live_store._persist_path = persist_file
+    live_store.load()
 except Exception:
-    logger.exception('Failed to initialize persisted LiveData')
+    logger.exception('Failed to initialize persisted LiveDataStore')
 
 
 @app.route('/api/set', methods=['POST'])
@@ -146,8 +224,13 @@ def api_update_livedata():
 
     data = request.get_json()
 
+    # determine output key from payload or use default
+    output = data.get('output', 'PRV') if isinstance(data, dict) else 'PRV'
     try:
-        live_data.update_from(data)
+        if not live_store.validate_key(output):
+            raise ValueError('Invalid output key')
+        target = live_store.get_data_at(output)
+        target.update_from(data)
     except (ValueError, TypeError) as exc:
         logger.warning('Invalid data for LiveData update: %s', exc)
         return jsonify({"error": str(exc)}), 400
@@ -155,17 +238,17 @@ def api_update_livedata():
         logger.exception('Unexpected error while updating LiveData')
         return jsonify({"error": "Internal server error"}), 500
 
-    logger.info('LiveData updated: %s', live_data)
+    logger.info(f'LiveData updated for output {output}: {target}')
 
     try:
-        socketio.emit('livedata', live_data.to_dict())
+        socketio.emit('livedata', live_store.get_data().to_dict())
     except Exception:
         logger.exception('Failed to emit livedata')
 
     try:
-        live_data.save()
+        live_store.save()
     except Exception:
-        logging.getLogger('server').warning('Failed to persist LiveData')
+        logging.getLogger('server').warning('Failed to persist LiveDataStore')
 
     return jsonify({}), 200
 
@@ -214,7 +297,7 @@ def on_echo(data):
 @socketio.on('get_livedata')
 def on_get_livedata(_data=None):
     try:
-        current = live_data.to_dict()
+        current = live_store.get_data().to_dict()
     except Exception:
         logger.exception('Failed to read LiveData')
 
@@ -227,6 +310,62 @@ def on_get_livedata(_data=None):
                 emit('livedata', current, room=sid)
         except Exception:
             logger.debug('Failed to emit livedata to room')
+
+
+@app.route('/api/output', methods=['POST'])
+def api_set_current():
+    try:
+        if not request.is_json:
+            raise TypeError("Expected application/json")
+
+        data = request.get_json()
+        if not isinstance(data, dict):
+            raise TypeError("Expected JSON object")
+
+        output_key = data.get('output')
+        preview_key = data.get('preview')
+        transition_present = 'transition' in data
+
+        # validate optional keys when present
+        if output_key is not None and not isinstance(output_key, str):
+            raise TypeError("Invalid 'output' value")
+        if preview_key is not None and not isinstance(preview_key, str):
+            raise TypeError("Invalid 'preview' value")
+
+        # Handle preview/transition logic: all fields optional
+        if transition_present:
+            # swap current and preview
+            live_store.swap_current_and_preview()
+            logging.getLogger('server').info(f'Transitioned current and preview: current={live_store.get_current_key()}, preview={live_store.get_preview_key()}')
+            
+        if output_key is not None:
+            if not live_store.validate_key(output_key):
+                raise ValueError('Invalid output key')
+            live_store.set_current_key(output_key)
+            logging.getLogger('server').info(f'Set current output to: {output_key}')
+
+        if preview_key is not None:
+            if not live_store.validate_key(preview_key):
+                raise ValueError('Invalid preview output key')
+            live_store.set_preview_key(preview_key)
+            logging.getLogger('server').info(f'Set preview output to: {preview_key}')
+
+        # persist and emit new current livedata
+        try:
+            live_store.save()
+        except Exception:
+            logger.warning('Failed to persist LiveDataStore')
+
+        current = live_store.get_data().to_dict()
+        socketio.emit('livedata', current)
+
+        return jsonify({}), 200
+    except Exception as exc:
+        # log exception and return JSON error (400 for validation errors)
+        logger.exception('Failed to set current output: %s', exc)
+        if isinstance(exc, (ValueError, TypeError)):
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"error": "Internal server error"}), 500
 
 
 def run():
