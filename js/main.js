@@ -179,15 +179,72 @@ function setupOntimePoll() {
     pollOnTime().then((data) => {
         console.log("Initial ontime data fetch:", data);
         updateDomWithPollData(data);
-    }).catch((err) => {});
+    }).catch((err) => { });
 
     setInterval(() => {
         pollOnTime().then((data) => {
             updateDomWithPollData(data);
-        }).catch((err) => {});
+        }).catch((err) => { });
     }, intervalMs);
 }
 
 (function () {
     gsap.registerPlugin(TextPlugin);
 })();
+
+function setBoxes(data) {
+    console.log(data);
+
+    if (data.big_box) {
+        document.getElementById('big-box').style.width = data.big_box * data.big_box_aspect_ratio + 'vh';
+        document.getElementById('big-box').style.height = data.big_box + 'vh';
+
+        if (data.big_box <= 0.1 || data.big_box == null || data.big_box >= 99.9) {
+            document.getElementById('big-box').style.opacity = 0;
+        } else {
+            document.getElementById('big-box').style.opacity = 1;
+        }
+    }
+
+    // ATEM box parameters
+    // Position: X from -32 to 32 (0 means center at center)
+    // Position: Y from -18 to 18 (0 means center at center)
+    // Size: from 0 to 1
+    //
+    // Crop:
+    // Top-Bottom: 0-18
+    // Left-Right: 0-32
+    //
+    // Application order: Crop -> Size -> Position
+
+    if (data.boxes && data.boxes.forEach) data.boxes.forEach((params, index) => {
+        const $box = document.getElementById(`box-${index + 1}`);
+
+        x = params[0];
+        y = params[1];
+        size = params[2];
+        crop_top = params[3];
+        crop_bottom = params[4];
+        crop_left = params[5];
+        crop_right = params[6];
+
+        let left_edge_at = crop_left / 32.0 * size + (1 - size) / 2.0 + x / 32.0;
+        let width = size - (crop_left + crop_right) / 32.0 * size;
+
+        let top_edge_at = crop_top / 18.0 * size + (1 - size) / 2.0 - y / 18.0;
+        let height = size - (crop_top + crop_bottom) / 18.0 * size;
+
+        $box.style.left = (left_edge_at * 100) + 'vw';
+        $box.style.top = (top_edge_at * 100) + 'vh';
+        $box.style.width = (width) * 100 + 'vw';
+        $box.style.height = (height) * 100 + 'vh';
+        $box.style.opacity = size <= 0.01 ? 0 : 1;
+    });
+
+    if (data.boxes && data.boxes.length < 4) {
+        for (let i = data.boxes.length; i < 4; i++) {
+            const $box = document.getElementById(`box-${i + 1}`);
+            $box.style.opacity = 0;
+        }
+    }
+}

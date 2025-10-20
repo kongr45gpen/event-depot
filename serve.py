@@ -42,13 +42,16 @@ class LiveData:
             for idx, box in enumerate(boxes):
                 if not isinstance(box, (list, tuple)):
                     raise TypeError(f"Box at index {idx} must be a list/tuple")
-                vals = []
-                for v in box:
+                vals = [ 0, 0, 1, 0 , 0, 0, 0 ]
+                for i, v in enumerate(box):
                     try:
                         vnum = float(v)
+                        vals[i] = vnum
                     except Exception:
                         raise ValueError(f"Box at index {idx} contains non-numeric value")
-                    vals.append(vnum)
+                    if len(vals) > 7:
+                        raise ValueError(f"You can't fill your boxes with too much stuff.")
+                new_boxes.append(vals)
     
             self.boxes = new_boxes
 
@@ -139,6 +142,7 @@ def api_update_livedata():
     try:
         live_data.update_from(data)
     except (ValueError, TypeError) as exc:
+        logger.warning('Invalid data for LiveData update: %s', exc)
         return jsonify({"error": str(exc)}), 400
     except Exception:
         logger.exception('Unexpected error while updating LiveData')

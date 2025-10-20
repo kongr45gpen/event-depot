@@ -260,3 +260,7 @@ main {
 
     pointer-events: none;
 }
+
+.mini.box {
+    position: absolute;
+}

@@ -28,8 +28,11 @@
     </footer>
 
     <div class="box-container">
-        <div class="box" id="big-box">
-        </div>
+        <div class="box" id="big-box"></div>
+        <div class="mini box" id="box-1"></div>
+        <div class="mini box" id="box-2"></div>
+        <div class="mini box" id="box-3"></div>
+        <div class="mini box" id="box-4"></div>
     </div>
 
     <script src="assets/gsap.min.js"></script>
@@ -41,21 +44,36 @@
         setupOntimePoll();
 
         try {
+            if (params.has('noboxes')) {
+                throw 'No boxes here';
+            }
+
+            let defaults = {
+                big_box_aspect_ratio: 16 / 9,
+            };
+            let overrides = {};
+
+            if (params.has('big_box')) {
+                overrides.big_box = parseFloat(params.get('big_box'));
+            }
+            if (params.has('big_box_aspect_ratio')) {
+                overrides.big_box_aspect_ratio = parseFloat(params.get('bigbox_aspect_ratio'));
+            }
+            if (params.has('boxes')) {
+                overrides.boxes = params.get('boxes');
+            }
+
+            setBoxes(overrides);
+
             const socket = io();
 
             socket.emit('get_livedata');
 
             socket.on('livedata', (data) => {
                 console.log('Received livedata:', data);
-                document.getElementById('big-box').style.width = data.big_box * data.big_box_aspect_ratio + 'vh';
-                document.getElementById('big-box').style.height = data.big_box + 'vh';
-
-                if (data.big_box <= 0.1 || data.big_box == null || data.big_box >= 99.9) {
-                    document.getElementById('big-box').style.opacity = 0;
-                } else {
-                    document.getElementById('big-box').style.opacity = 1;
-                }
+                setBoxes(Object.assign({}, defaults, data, overrides));
             });
+                
         } catch (error) {
             console.error('Socket.IO connection error:', error);
         }
