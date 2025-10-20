@@ -1,28 +1,22 @@
 import argparse
 import logging
 import sys
-from http.server import SimpleHTTPRequestHandler
-from socketserver import ThreadingMixIn
-from http.server import HTTPServer
-from functools import partial
 from pathlib import Path
 
+from flask import Flask, send_from_directory, request, redirect, url_for, Response
+from flask_socketio import SocketIO, emit
 
-# Install coloredlogs if available; otherwise, configure basic logging.
+
 try:
     import coloredlogs
 
-    _LOG_FMT = "%(asctime)s %(levelname)s %(message)s"
+    _LOG_FMT = "%(asctime)s %(name)-10s %(levelname)-6s %(message)s"
     coloredlogs.install(level="INFO", fmt=_LOG_FMT)
 except Exception:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)-10s %(levelname)-6s %(message)s")
 
 
-class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
-    daemon_threads = True
-
-
-parser = argparse.ArgumentParser(description="Serve the script's directory over HTTP with colored logs")
+parser = argparse.ArgumentParser(description="Serve the script's directory over HTTP with colored logs and a Socket.IO endpoint")
 parser.add_argument("--port", "-p", type=int, default=8080, help="Port to listen on")
 parser.add_argument("--bind", "-b", default="0.0.0.0", help="Bind address")
 parser.add_argument("-q", "--quiet", action="store_true", help="Reduce logging output to WARNING")
@@ -48,24 +42,69 @@ if not directory_path.exists():
     sys.exit(2)
 
 
-handler = partial(SimpleHTTPRequestHandler, directory=str(directory_path))
-try:
-    server = ThreadingHTTPServer((args.bind, int(args.port)), handler)
-except OSError as exc:
-    logger.error("Failed to start server on %s:%s — %s", args.bind, args.port, exc)
-    sys.exit(3)
+# Create Flask app to serve static files from the script directory
+app = Flask(__name__, static_folder=str(directory_path), static_url_path="")
 
-addr, used_port = server.server_address
-logger.info("Serving %s on http://%s:%s", directory_path, addr, used_port)
-logger.info("Press Ctrl-C to stop")
+# Configure Socket.IO. We allow CORS from anywhere for local development.
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-try:
-    server.serve_forever()
-except KeyboardInterrupt:
-    logger.info("Shutting down server")
-    server.shutdown()
-    server.server_close()
-    sys.exit(0)
-except Exception as exc:  # pragma: no cover - defensive
-    logger.exception("Server error: %s", exc)
-    sys.exit(4)
+
+@app.route("/")
+def index():
+    for fname in ("index.html", ):
+        fpath = directory_path / fname
+        if fpath.exists():
+            return send_from_directory(str(directory_path), fname)
+    # Otherwise list available html files as a simple index
+    items = [p.name for p in directory_path.iterdir() if p.suffix == ".html"]
+    body = "<h1>Available pages</h1>\n<ul>\n"
+    for it in sorted(items):
+        body += f"<li><a href=\"/{it}\">{it}</a></li>\n"
+    body += "</ul>"
+    return Response(body, mimetype="text/html")
+
+
+@app.route('/<path:filename>')
+def serve_file(filename):
+    # Let Flask serve any file from the directory
+    return send_from_directory(str(directory_path), filename)
+
+
+@socketio.on('connect')
+def on_connect():
+    sid = request.sid if hasattr(request, 'sid') else None
+    logger.info('Socket Client connected: %s', sid)
+    emit('server_message', {'message': 'connected'})
+
+
+@socketio.on('disconnect')
+def on_disconnect():
+    sid = request.sid if hasattr(request, 'sid') else None
+    logger.info('Socket Client disconnected: %s', sid)
+
+
+@socketio.on('echo')
+def on_echo(data):
+    # Echo back whatever the client sends on 'echo'
+    logger.debug('Echo event received: %r', data)
+    emit('echo', data)
+
+
+def run():
+    host = args.bind
+    port = int(args.port)
+    logger.info('Serving %s on http://%s:%s', directory_path, host, port)
+    logger.info('Press Ctrl-C to stop')
+    try:
+        # Use eventlet/gevent if installed; flask-socketio will pick the best available.
+        socketio.run(app, host=host, port=port, debug=args.debug)
+    except KeyboardInterrupt:
+        logger.info('Shutting down server')
+        sys.exit(0)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception('Server error: %s', exc)
+        sys.exit(4)
+
+
+if __name__ == '__main__':
+    run()

@@ -3,3 +3,6 @@ confuse @ git+https://github.com/beetbox/confuse.git
 mido
 python_osc
 python-rtmidi
+flask
+flask-socketio
+eventlet
