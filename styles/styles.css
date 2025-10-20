@@ -25,7 +25,7 @@ body {
 }
 
 header {
-    padding: 2rem;
+    padding: 1vh 2vw;
     display: flex;
     justify-content: left;
     gap: 1.5rem;
@@ -37,12 +37,21 @@ header {
     font-size: 6vh;
     font-weight: 700;
     max-width: 70%;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: clip;
+    overflow-clip-margin: 1.5vw;
 }
 
 #speaker {
     font-size: 4vh;
     font-weight: 500;
     color: #dddddd;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: clip;
+    overflow-clip-margin: 1.5vw;
 }
 
 footer {

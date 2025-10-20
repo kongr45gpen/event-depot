@@ -1,4 +1,0 @@
-- [ ] Implement MIDI to OSC
-- [ ] Implement layer switching
-- [ ] Make big fader work
-- [ ] Implement meters
