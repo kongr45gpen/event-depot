@@ -21,10 +21,12 @@ class LiveData:
         self.boxes = []
         self.big_box = None
         self.big_box_aspect_ratio = 16/9
+        self.big_box_x = None
+        self.big_box_y = None
         self._persist_path = None
 
     def to_dict(self):
-        return {"boxes": self.boxes, "big_box": self.big_box, "big_box_aspect_ratio": self.big_box_aspect_ratio}
+        return {"boxes": self.boxes, "big_box": self.big_box, "big_box_aspect_ratio": self.big_box_aspect_ratio, "big_box_x": self.big_box_x, "big_box_y": self.big_box_y}
 
     def update_from(self, data):
         if not isinstance(data, dict):
@@ -68,6 +70,11 @@ class LiveData:
 
             if self.big_box_aspect_ratio <= 0.001 or self.big_box_aspect_ratio > 100:
                 raise ValueError("Your big box is not doing very well.")
+        
+        if 'big_box_x' in data:
+            self.big_box_x = float(data.get('big_box_x'))
+        if 'big_box_y' in data:
+            self.big_box_y = float(data.get('big_box_y'))
 
     def save(self) -> None:
         try:
@@ -86,7 +93,7 @@ class LiveData:
             logging.getLogger('server').exception('Failed to load persisted LiveData')
 
     def __str__(self):
-        return f"LiveData(boxes={self.boxes}, big_box={self.big_box})"
+        return f"LiveData({self.to_dict()})"
 
 parser = argparse.ArgumentParser(description="Serve the script's directory over HTTP with colored logs and a Socket.IO endpoint")
 parser.add_argument("--port", "-p", type=int, default=8080, help="Port to listen on")

@@ -38,6 +38,7 @@
     <script src="assets/gsap.min.js"></script>
     <script src="assets/TextPlugin.min.js"></script>
     <script src="assets/socket.io.min.js"></script>
+    <script src="assets/lodash.core.min.js"></script>
     <script src="js/main.js"></script>
 
     <script>
@@ -62,6 +63,12 @@
             if (params.has('boxes')) {
                 overrides.boxes = params.get('boxes');
             }
+            if (params.has('big_box_x')) {
+                overrides.big_box_x = parseFloat(params.get('big_box_x'));
+            }
+            if (params.has('big_box_y')) {
+                overrides.big_box_y = parseFloat(params.get('big_box_y'));
+            }
 
             setBoxes(overrides);
 
@@ -71,7 +78,7 @@
 
             socket.on('livedata', (data) => {
                 console.log('Received livedata:', data);
-                setBoxes(Object.assign({}, defaults, data, overrides));
+                setBoxes(Object.assign({}, defaults, data, overrides), true);
             });
                 
         } catch (error) {

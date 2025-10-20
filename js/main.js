@@ -192,17 +192,77 @@ function setupOntimePoll() {
     gsap.registerPlugin(TextPlugin);
 })();
 
-function setBoxes(data) {
-    console.log(data);
+function setBoxes(data, animate = false) {
+    const ANIMATION_DURATION = 0.5;
 
     if (data.big_box) {
-        document.getElementById('big-box').style.width = data.big_box * data.big_box_aspect_ratio + 'vh';
-        document.getElementById('big-box').style.height = data.big_box + 'vh';
+        const $bigBox = document.getElementById('big-box');
 
-        if (data.big_box <= 0.1 || data.big_box == null || data.big_box >= 99.9) {
-            document.getElementById('big-box').style.opacity = 0;
+        const old_properties = {
+            width: $bigBox.style.width,
+            height: $bigBox.style.height,
+            marginLeft: $bigBox.style.marginLeft,
+            marginTop: $bigBox.style.marginTop,
+        };
+
+        const new_properties = {
+            width: 100.0 * data.big_box * data.big_box_aspect_ratio + 'vh',
+            height: 100.0 * data.big_box + 'vh',
+            marginTop: (data.big_box_y) ? 100.0 * ( - data.big_box_y) / 18.0 + 'vh' : '0vh',
+            marginLeft: (data.big_box_x) ? 100.0 * data.big_box_x / 32.0 + 'vw' : '0vw',
+        };
+
+        // Compact numeric comparison: strip 2-char units, parse floats and compare with epsilon; fallback to _.isEqual
+        const epsilon = 0.05;
+        const propToFloat = s => (typeof s === 'string' && s.trim().length > 2) ? parseFloat(s.trim().slice(0, -2)) : NaN;
+        let properties_equal;
+        try {
+            const keys = Object.keys(new_properties);
+            const oldNums = _.map(keys, k => propToFloat(old_properties[k]));
+            const newNums = _.map(keys, k => propToFloat(new_properties[k]));
+            if (!_.every(_.concat(oldNums, newNums), _.isFinite)) throw new Error('non-numeric');
+            properties_equal = _.every(_.zip(oldNums, newNums), pair => Math.abs(pair[0] - pair[1]) <= epsilon);
+        } catch (e) {
+            properties_equal = _.isEqual(old_properties, new_properties);
+        }
+        const box_invisible = (data.big_box <= 0.01 || data.big_box == null || data.big_box >= 0.999);
+
+        console.log(
+            `Updating big box: old_properties=${JSON.stringify(old_properties)}, new_properties=${JSON.stringify(new_properties)}, ` +
+            `properties_equal=${properties_equal}, box_invisible=${box_invisible}, animate=${animate}`
+        )
+
+        if (animate && !properties_equal) {
+            gsap.to($bigBox.style, {
+                opacity: 0,
+                duration: ANIMATION_DURATION / 2,
+                ease: "power2.inOut",
+                onComplete() {
+                    if (!box_invisible) {
+                        $bigBox.style.width = new_properties.width;
+                        $bigBox.style.height = new_properties.height;
+                        $bigBox.style.marginLeft = new_properties.marginLeft;
+                        $bigBox.style.marginTop = new_properties.marginTop;
+
+                        gsap.to($bigBox.style, {
+                            opacity: 1,
+                            duration: ANIMATION_DURATION / 2,
+                            ease: "power2.inOut",
+                        });
+                    }
+                }
+            });
         } else {
-            document.getElementById('big-box').style.opacity = 1;
+            $bigBox.style.width = new_properties.width;
+            $bigBox.style.height = new_properties.height;
+            $bigBox.style.marginLeft = new_properties.marginLeft;
+            $bigBox.style.marginTop = new_properties.marginTop;
+
+            if (box_invisible) {
+                $bigBox.style.opacity = 0;
+            } else {
+                $bigBox.style.opacity = 1;
+            }
         }
     }
 
@@ -217,8 +277,16 @@ function setBoxes(data) {
     //
     // Application order: Crop -> Size -> Position
 
-    if (data.boxes && data.boxes.forEach) data.boxes.forEach((params, index) => {
+    let boxes = data.boxes;
+
+    if (!boxes || boxes.length === 0 || boxes.length === undefined || boxes.length === null) {
+        boxes = [];
+    }
+
+    boxes.forEach((params, index) => {
         const $box = document.getElementById(`box-${index + 1}`);
+
+        console.log(`Updating box ${index + 1} with params:`, params);
 
         x = params[0];
         y = params[1];
@@ -234,17 +302,100 @@ function setBoxes(data) {
         let top_edge_at = crop_top / 18.0 * size + (1 - size) / 2.0 - y / 18.0;
         let height = size - (crop_top + crop_bottom) / 18.0 * size;
 
-        $box.style.left = (left_edge_at * 100) + 'vw';
-        $box.style.top = (top_edge_at * 100) + 'vh';
-        $box.style.width = (width) * 100 + 'vw';
-        $box.style.height = (height) * 100 + 'vh';
-        $box.style.opacity = size <= 0.01 ? 0 : 1;
+        const old_properties = {
+            left: $box.style.left,
+            top: $box.style.top,
+            width: $box.style.width,
+            height: $box.style.height,
+        };
+
+        const new_properties = {
+            left: (left_edge_at * 100).toFixed(4) + 'vw',
+            top: (top_edge_at * 100).toFixed(4) + 'vh',
+            width: (width - 0.002).toFixed(4) * 100 + 'vw',
+            height: (height - 0.002).toFixed(4) * 100 + 'vh',
+        };
+
+        const epsilon_box = 0.05;
+        const propToFloatBox = s => (typeof s === 'string' && s.trim().length > 2) ? parseFloat(s.trim().slice(0, -2)) : NaN;
+        let properties_equal;
+        try {
+            const keysBox = Object.keys(new_properties);
+            const oldNumsBox = _.map(keysBox, k => propToFloatBox(old_properties[k]));
+            const newNumsBox = _.map(keysBox, k => propToFloatBox(new_properties[k]));
+
+            console.log(`Old numeric properties for box ${index + 1}:`, oldNumsBox);
+            console.log(`New numeric properties for box ${index + 1}:`, newNumsBox);
+
+            const zip = rows => rows[0].map((_,c) => rows.map(row => row[c]));
+            properties_equal = _.every(zip([oldNumsBox, newNumsBox]), pair => Math.abs(pair[0] - pair[1]) <= epsilon_box);
+
+            console.log(`Properties equal check for box ${index + 1}:`, zip([oldNumsBox, newNumsBox]));
+        } catch (e) {
+            console.warn(e);
+            properties_equal = _.isEqual(old_properties, new_properties);
+        }
+        const box_invisible = (size <= 0.01 || size == null || size >= 99.9);
+
+        console.log(
+            `Updating box ${index + 1}: properties_equal=${properties_equal}, box_invisible=${box_invisible}, animate=${animate}`
+        )
+
+        if (animate && !properties_equal) {
+            gsap.to($box.style, {
+                opacity: 0,
+                duration: ANIMATION_DURATION / 2,
+                ease: "power2.inOut",
+                onComplete() {
+                    if (!box_invisible) {
+                        $box.style.left = new_properties.left;
+                        $box.style.top = new_properties.top;
+                        $box.style.width = new_properties.width;
+                        $box.style.height = new_properties.height;
+
+                        gsap.to($box.style, {
+                            opacity: 1,
+                            duration: ANIMATION_DURATION / 2,
+                            ease: "power2.inOut",
+                        });
+                    }
+                }
+            });
+        } else {
+            $box.style.left = new_properties.left;
+            $box.style.top = new_properties.top;
+            $box.style.width = new_properties.width;
+            $box.style.height = new_properties.height;
+            if (box_invisible) {
+                $box.style.opacity = 0;
+            } else {
+                $box.style.opacity = 1;
+            }
+        }
+
+        
+    const nld_properties = {
+            left: $box.style.left,
+            top: $box.style.top,
+            width: $box.style.width,
+            height: $box.style.height,
+        };
+
     });
+
 
     if (data.boxes && data.boxes.length < 4) {
         for (let i = data.boxes.length; i < 4; i++) {
             const $box = document.getElementById(`box-${i + 1}`);
-            $box.style.opacity = 0;
+            if (animate) {
+                gsap.to($box.style, {
+                    opacity: 0,
+                    duration: ANIMATION_DURATION / 2,
+                    ease: "power2.inOut",
+                });
+            } else {
+                $box.style.opacity = 0;
+            }
         }
     }
 }
