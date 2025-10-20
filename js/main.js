@@ -190,10 +190,6 @@ function setupOntimePoll() {
     }, intervalMs);
 }
 
-(function () {
-    gsap.registerPlugin(TextPlugin);
-})();
-
 function areDictsRoughlyEqual(arr1, arr2, epsilon = 0.05) {
     let properties_equal;
 
@@ -395,3 +391,166 @@ function setBoxes(data, animate = false) {
         }
     }
 }
+
+
+// --- WinMusic polling: POST to winmusic URL and update Now Playing box ---
+async function hideNowPlaying() {
+    try {
+        const $now = document.getElementById('now-playing');
+        if (!$now) return;
+        if ($now.style.display === 'none') return;
+        await gsap.to($now, { opacity: 0, y: -20, duration: 0.3, ease: 'power2.inOut' });
+        $now.style.display = 'none';
+
+        // Set all fields to empty to force an update
+        const fields = ['music.title', 'music.artist', 'music.license', 'music.link'];
+        fields.forEach((id) => {
+            const $el = document.getElementById(id);
+            if ($el) {
+                if (id === 'music.link') {
+                    $el.href = '#';
+                    $el.textContent = '';
+                } else {
+                    $el.textContent = '';
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Failed to hide now-playing box:', err);
+    }
+}
+
+async function showNowPlaying() {
+    try {
+        const $now = document.getElementById('now-playing');
+        if (!$now) return;
+        if ($now.style.display !== 'none') return;
+        $now.style.display = '';
+        await gsap.fromTo($now, { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' });
+    } catch (err) {
+        console.error('Failed to show now-playing box:', err);
+    }
+}
+
+function fieldsEqual(a, b) {
+    // normalize undefined/null to empty string and trim
+    const na = (a || '').trim();
+    const nb = (b || '').trim();
+    return na === nb;
+}
+
+async function pollWinMusicOnce() {
+    const urlParam = params.get('winmusic');
+    if (!urlParam) return;
+
+    let url;
+    try {
+        url = new URL(urlParam).href;
+    } catch (e) {
+        url = urlParam;
+    }
+
+    try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store' });
+        if (!res.ok) {
+            console.log('WinMusic poll returned HTTP error:', res.status, res.statusText);
+            await hideNowPlaying();
+            return;
+        }
+
+        let data;
+        try {
+            data = await res.json();
+        } catch (err) {
+            console.error('Failed to parse winmusic response as JSON:', err);
+            await hideNowPlaying();
+            return;
+        }
+
+        if (!data || typeof data !== 'object') {
+            await hideNowPlaying();
+            return;
+        }
+
+        const newTitle = data.title || '';
+        const newArtist = data.author || '';
+        let newLicense = data.license || '';
+        const newPurl = data.purl || '';
+
+        if (newLicense && newLicense !== '') {
+            newLicense = "License: " + newLicense;
+        }
+
+        if (!newTitle && !newArtist && !newLicense && !newPurl) {
+            await hideNowPlaying();
+            return;
+        }
+
+        const $title = document.getElementById('music.title');
+        const $artist = document.getElementById('music.artist');
+        const $license = document.getElementById('music.license');
+        const $link = document.getElementById('music.link');
+
+        const oldTitle = $title ? $title.textContent : '';
+        const oldArtist = $artist ? $artist.textContent : '';
+        const oldLicense = $license ? $license.textContent : '';
+        const oldPurl = $link ? $link.textContent : '';
+
+        const changed = !fieldsEqual(oldTitle, newTitle) || !fieldsEqual(oldArtist, newArtist) || !fieldsEqual(oldLicense, newLicense) || !fieldsEqual(oldPurl, newPurl);
+
+        // console.log("old data:", { oldTitle, oldArtist, oldLicense, oldPurl });
+        // console.log("new data:", { newTitle, newArtist, newLicense, newPurl });
+        // console.log("data changed:", changed);
+
+        if (!changed) {
+            return; // nothing to do
+        }
+
+        // Animate hide, update, show
+        await hideNowPlaying();
+
+        try {
+            if ($title) $title.textContent = newTitle || '';
+            if ($artist) $artist.textContent = newArtist || '';
+            if ($license) $license.textContent = newLicense || '';
+            if ($link) {
+                $link.href = newPurl || '#';
+                $link.textContent = newPurl || '';
+            }
+        } catch (err) {
+            console.error('Failed to update now-playing DOM elements:', err);
+        }
+
+        await showNowPlaying();
+
+    } catch (err) {
+        console.error('WinMusic poll failed:', err);
+        await hideNowPlaying();
+    }
+}
+
+function setupWinMusicPoll() {
+    const url = params.get('winmusic');
+    if (!url) return;
+
+    const intervalMs = params.has('winmusic-interval') ? parseInt(params.get('winmusic-interval'), 10) : (params.has('interval') ? parseInt(params.get('interval'), 10) : 5000);
+
+    // initial call
+    pollWinMusicOnce().catch((e) => { console.error(e); });
+
+    setInterval(() => {
+        pollWinMusicOnce().catch((e) => { console.error(e); });
+    }, intervalMs);
+}
+
+(function () {
+    gsap.registerPlugin(TextPlugin);
+
+    try {
+        setupWinMusicPoll();
+    } catch (e) {
+        console.error('Failed to start winmusic poll:', e);
+    }
+})();
+
+

@@ -14,6 +14,10 @@ import re
 import pywinctl as pwc
 import nltk
 import time
+from flask import Flask, app, request, jsonify, make_response
+
+# Maximum length (in characters) to compare when matching parts of titles/authors
+MAX_COMPARE_LENGTH = 10
 
 try:
     import coloredlogs
@@ -43,8 +47,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Bind host for HTTP server (default: 0.0.0.0)")
 
     parser.add_argument("-p", "--port", dest="port", type=int,
-                        default=7373,
-                        help="Bind port for HTTP server (default: 7373)")
+                        default=7372,
+                        help="Bind port for HTTP server (default: 7372)")
 
     parser.add_argument("-l", "--lev", dest="lev", type=float,
                         default=3.0,
@@ -174,25 +178,22 @@ def identify(music_db: dict[str, dict], threshold) -> dict:
 
         # Linear search all songs for match
         for song_path, meta in music_db.items():
-            required = [ meta.get('author')[:10].lower(), meta.get('title')[:10].lower() ]
+            required = [ meta.get('author').strip()[:MAX_COMPARE_LENGTH].lower().strip(), meta.get('title').strip()[:MAX_COMPARE_LENGTH].lower().strip() ]
 
             # Match between parts and candidates
             success_required = 0
-            # for part in parts:
-                # part_clean = part.strip().lower()[:10]
-                # for candidate in required:
-                    # combinations_tested += 1
             for metadatum in required:
-                    for part in parts:
-                        part_clean = part.strip().lower()[:10]
-                        combinations_tested += 1
-                        if nltk.edit_distance(part_clean, metadatum) <= threshold:
-                            success_required += 1
-                            break
+                for part in parts:
+                    part_clean = part.strip().lower()[:MAX_COMPARE_LENGTH].strip()
+                    combinations_tested += 1
+                    if nltk.edit_distance(part_clean, metadatum) <= threshold:
+                        success_required += 1
+                        break
             if success_required == len(required):
-                _LOG.debug(f"Edit distance between '{part_clean}' and '{metadatum}' is within threshold {threshold}")
+                _LOG.debug(f"Edit distance between '{part_clean}' and '{metadatum}' is {nltk.edit_distance(part_clean, metadatum)} < {threshold}")
                 _LOG.debug(f"Total combinations tested so far: {combinations_tested}. Time elapsed: {1000.0 * (time.time() - start_time):.0f} ms")
-                _LOG.info(f"Match found! Window title: {title} - Song: {meta.get('author')} - {meta.get('title')}")
+                _LOG.info(f"Match found! Window title: [{title}] Song: [{meta.get('author')}] [{meta.get('title')}]")
+                _LOG.debug(f"Matched song metadata: {meta}")
                 return meta
 
     _LOG.info(f"No match found :( Total combinations tested: {combinations_tested} in {1000.0 * (time.time() - start_time):.0f} ms")
@@ -206,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
 
     _LOG.info("Starting winmusic with: music_dir=%s interval=%s host=%s port=%s lev=%s",
               ns.music_dir, ns.interval, ns.host, ns.port, ns.lev)
+    
+    _LOG.info("NOTE: You need to restart the script if the tags/files of the directory are changed.")
 
     if not ns.music_dir.exists():
         _LOG.error("Music directory does not exist: %s", ns.music_dir)
@@ -214,12 +217,45 @@ def main(argv: list[str] | None = None) -> int:
         _LOG.error("Music directory is not a directory: %s", ns.music_dir)
         return 2
     
-    _LOG.info("Indexing music files in %s...", ns.music_dir)
+    _LOG.debug("Indexing music files in %s...", ns.music_dir)
     music_db = create_music_database(ns.music_dir)
 
-    identification = identify(music_db, ns.lev)
-    if identification:
-        _LOG.debug(f"Identified song: {identification}")
+    # Create a minimal Flask app that exposes a POST /identify endpoint
+    app = Flask(__name__)
+
+    @app.route('/', defaults={'path': ''}, methods=['POST', 'OPTIONS'])
+    @app.route('/<path:path>', methods=['POST', 'OPTIONS'])
+    def catch_all(path: None):
+        # Handle CORS preflight
+        if request.method == 'OPTIONS':
+            resp = make_response('', 204)
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            resp.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+            resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            return resp
+
+        try:
+            result = identify(music_db, ns.lev)
+            if result is None:
+                resp = jsonify({})
+                resp.status_code = 404
+            else:
+                resp = jsonify(result)
+                resp.status_code = 200
+        except Exception:
+            _LOG.exception('Error during identification')
+            resp = jsonify({'error': 'identification_failed'})
+            resp.status_code = 500
+
+        # Allow any origin
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+
+    try:
+        _LOG.info('Starting HTTP identify server on %s:%s', ns.host, ns.port)
+        app.run(host=ns.host, port=ns.port)
+    except KeyboardInterrupt:
+        _LOG.info('Server stopped')
 
     return 0
 
