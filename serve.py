@@ -3,7 +3,7 @@ import logging
 import sys
 from pathlib import Path
 
-from flask import Flask, send_from_directory, request, redirect, url_for, Response
+from flask import Flask, send_from_directory, request, redirect, url_for, Response, jsonify
 from flask_socketio import SocketIO, emit
 
 
@@ -15,6 +15,50 @@ try:
 except Exception:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)-10s %(levelname)-6s %(message)s")
 
+class LiveData:
+    def __init__(self):
+        self.boxes = []
+        self.big_box = None
+    
+    def to_dict(self):
+        return {"boxes": self.boxes, "big_box": self.big_box}
+
+    def update_from(self, data):
+        if not isinstance(data, dict):
+            raise TypeError("Expected data to be a dict")
+
+        if 'boxes' in data:
+            boxes = data.get('boxes')
+            if not isinstance(boxes, list):
+                raise TypeError("'boxes' must be a list")
+
+            if len(boxes) > 4:
+                raise ValueError("At most 4 boxes are allowed")
+
+            new_boxes = []
+            for idx, box in enumerate(boxes):
+                if not isinstance(box, (list, tuple)):
+                    raise TypeError(f"Box at index {idx} must be a list/tuple")
+                vals = []
+                for v in box:
+                    try:
+                        vnum = float(v)
+                    except Exception:
+                        raise ValueError(f"Box at index {idx} contains non-numeric value")
+                    vals.append(vnum)
+    
+            self.boxes = new_boxes
+
+        if 'big_box' in data:
+            size = float(data.get('big_box'))
+
+            if size > 100 or size < 0:
+                raise ValueError("Your big box is unacceptable.")
+
+            self.big_box = size
+
+    def __str__(self):
+        return f"LiveData(boxes={self.boxes}, big_box={self.big_box})"
 
 parser = argparse.ArgumentParser(description="Serve the script's directory over HTTP with colored logs and a Socket.IO endpoint")
 parser.add_argument("--port", "-p", type=int, default=8080, help="Port to listen on")
@@ -47,6 +91,34 @@ app = Flask(__name__, static_folder=str(directory_path), static_url_path="")
 
 # Configure Socket.IO. We allow CORS from anywhere for local development.
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Global LiveData instance
+live_data = LiveData()
+
+
+@app.route('/api/set', methods=['POST'])
+def api_update_livedata():
+    if not request.is_json:
+        return jsonify({"error": "Expected application/json"}), 400
+
+    data = request.get_json()
+
+    try:
+        live_data.update_from(data)
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        logger.exception('Unexpected error while updating LiveData')
+        return jsonify({"error": "Internal server error"}), 500
+
+    logger.info('LiveData updated: %s', live_data)
+
+    try:
+        socketio.emit('livedata', live_data.to_dict())
+    except Exception:
+        logger.exception('Failed to emit livedata')
+
+    return jsonify({}), 200
 
 
 @app.route("/")
@@ -88,6 +160,24 @@ def on_echo(data):
     # Echo back whatever the client sends on 'echo'
     logger.debug('Echo event received: %r', data)
     emit('echo', data)
+
+
+@socketio.on('get_livedata')
+def on_get_livedata(_data=None):
+    try:
+        current = live_data.to_dict()
+    except Exception:
+        logger.exception('Failed to read LiveData')
+
+    try:
+        return current
+    finally:
+        try:
+            sid = request.sid if hasattr(request, 'sid') else None
+            if sid:
+                emit('livedata', current, room=sid)
+        except Exception:
+            logger.debug('Failed to emit livedata to room')
 
 
 def run():

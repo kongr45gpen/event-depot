@@ -27,6 +27,11 @@
         <img id="logo" src="https://placehold.co/256x256/orange/white/png" alt="">
     </footer>
 
+    <div class="box-container">
+        <div class="box" id="big-box">
+        </div>
+    </div>
+
     <script src="assets/gsap.min.js"></script>
     <script src="assets/TextPlugin.min.js"></script>
     <script src="assets/socket.io.min.js"></script>
@@ -37,6 +42,22 @@
 
         try {
             const socket = io();
+
+            socket.emit('get_livedata');
+
+            socket.on('livedata', (data) => {
+                console.log('Received livedata:', data);
+                // Update your presentation based on the received data
+                //updatePresentation(data);
+                document.getElementById('big-box').style.width = data.big_box + 'vw';
+                document.getElementById('big-box').style.height = data.big_box + 'vh';
+
+                if (data.big_box <= 0.1 || data.big_box == null || data.big_box >= 99.9) {
+                    document.getElementById('big-box').style.opacity = 0;
+                } else {
+                    document.getElementById('big-box').style.opacity = 1;
+                }
+            });
         } catch (error) {
             console.error('Socket.IO connection error:', error);
         }
