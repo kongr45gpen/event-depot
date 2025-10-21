@@ -1,0 +1,17 @@
+[Unit]
+Description=MPlayer framebuffer TV on %I
+After=network.target local-fs.target
+ConditionPathExists=/dev/%I
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/mplayer tv:// -tv driver=v4l2 -vo fbdev2:/dev/%I -fps 60 -nosound -vf format=bgr16
+Restart=on-failure
+RestartSec=2
+
+StandardOutput=journal
+StandardError=journal
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
