@@ -14,6 +14,29 @@
             background-size: cover;
         }
     </style>
+    <script>
+        // Check URL params for a right-sidebar hide flag and inject CSS to hide it.
+        (function() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const hide = params.has('hidebar');
+
+                if (hide) {
+                    const css = `
+                        .now-next-container { display: none !important; }
+                        main.container { grid-template-columns: 1fr !important; }
+                        .left { width: 100% !important; }
+                    `;
+                    const style = document.createElement('style');
+                    style.setAttribute('data-generated', 'hide-right-sidebar');
+                    style.appendChild(document.createTextNode(css));
+                    document.head.appendChild(style);
+                }
+            } catch (e) {
+                console.warn('hide-right-sidebar script failed', e);
+            }
+        })();
+    </script>
 </head>
 
 <body>
