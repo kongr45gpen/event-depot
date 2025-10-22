@@ -151,11 +151,11 @@ def create_music_database(music_dir: Path) -> None:
                         break
 
             except Exception:
-                _LOG.debug('Mutagen failed to read tags for %s', p, exc_info=False)
+                _LOG.debug(f'Mutagen failed to read tags for {p}', exc_info=False)
 
         db[str(p)] = meta
 
-    _LOG.info('Indexed %d files under %s', len(db), music_dir)
+    _LOG.info(f'Indexed {len(db)} files under {music_dir}')
     
     # import json
     # print(json.dumps(db, indent=2))
@@ -205,19 +205,18 @@ def main(argv: list[str] | None = None) -> int:
     ns = parse_args(argv)
     setup_logging(ns.debug, ns.quiet)
 
-    _LOG.info("Starting winmusic with: music_dir=%s interval=%s host=%s port=%s lev=%s",
-              ns.music_dir, ns.interval, ns.host, ns.port, ns.lev)
+    _LOG.info(f"Starting winmusic with: music_dir={ns.music_dir} interval={ns.interval} host={ns.host} port={ns.port} lev={ns.lev}")
     
     _LOG.info("NOTE: You need to restart the script if the tags/files of the directory are changed.")
 
     if not ns.music_dir.exists():
-        _LOG.error("Music directory does not exist: %s", ns.music_dir)
+        _LOG.error(f"Music directory does not exist: {ns.music_dir}")
         return 2
     if not ns.music_dir.is_dir():
-        _LOG.error("Music directory is not a directory: %s", ns.music_dir)
+        _LOG.error(f"Music directory is not a directory: {ns.music_dir}")
         return 2
     
-    _LOG.debug("Indexing music files in %s...", ns.music_dir)
+    _LOG.debug(f"Indexing music files in {ns.music_dir}...")
     music_db = create_music_database(ns.music_dir)
 
     # Create a minimal Flask app that exposes a POST /identify endpoint
@@ -252,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         return resp
 
     try:
-        _LOG.info('Starting HTTP identify server on %s:%s', ns.host, ns.port)
+        _LOG.info(f'Starting HTTP identify server on {ns.host}:{ns.port}')
         app.run(host=ns.host, port=ns.port)
     except KeyboardInterrupt:
         _LOG.info('Server stopped')

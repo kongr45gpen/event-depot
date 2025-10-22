@@ -1,6 +1,6 @@
 midi:
-  input: "X-TOUCH MINI 9"
-  output: "X-TOUCH MINI 9"
+  input: "X-TOUCH"
+  output: "X-TOUCH"
 xair:
   ip: "10.20.0.216"
 

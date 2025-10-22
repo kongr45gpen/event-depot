@@ -175,7 +175,7 @@ def midi_to_input(message):
         value = (message.pitch - min_pitch) / (max_pitch - min_pitch)
         return FaderInput(value=value)
 
-    logging.warning("Unhandled MIDI message: %s", message)
+    logging.warning(f"Unhandled MIDI message: {message}")
     return None
 
 async def handle_midi_input(input, configuration, xair, midiout):
@@ -264,7 +264,7 @@ async def monitor_midi(stream, output_queue: asyncio.Queue):
             logging.debug(f"MIDI IN: {message} -> {input_event}")
             await output_queue.put(input_event)
         except Exception as exc:
-            logging.error("Failed to process MIDI message %s: %s", message, exc)
+            logging.error(f"Failed to process MIDI message {message}: {exc}")
             continue
 
 async def midi_event_handler(configuration, xair, midiout, queue):
@@ -440,6 +440,31 @@ def critical_error_callback(type, error, data):
     print(f"Cannot continue processing MIDI due to a critical error. Please try again by restarting.")
     exit(5)
 
+def search_midi_device(name: str | None, is_output: bool) -> str | None:
+    if not name:
+        return None
+    
+    needle = name.lower()
+
+    try:
+        if is_output:
+            devices = mido.get_output_names()
+        else:
+            devices = mido.get_input_names()
+    except Exception:
+        logging.warning('Failed to enumerate MIDI devices via mido', exc_info=False)
+        return None
+
+    for dev in devices:
+        if needle in dev.lower():
+            logging.warning(f'Matched MIDI device "{dev}" for search "{name}" (direction={"output" if is_output else "input"})')
+            return dev
+
+    logging.warning(f'No MIDI device matched "{name}" (direction={"output" if is_output else "input"}).')
+    logging.debug(f'Available MIDI devices: {devices}')
+
+    return None
+
 async def main(argv=None):
     parser = argparse.ArgumentParser(description="MIDI monitor using mido + confuse config + coloredlogs")
     parser.add_argument('--config', '-c', type=Path, default=DEFAULT_CONFIG,
@@ -480,19 +505,43 @@ async def main(argv=None):
         await xair.connect()
         xair.enable_remote()
         status = await xair.get("/status")
-        logger.info("X-Air status: %s", status)
+        logger.info(f"X-Air status: {status}")
 
         cb, stream = make_stream()
 
         try:
-            logging.info("Opening input  '%s'", input_name)
+            logging.info(f"Opening input  '{input_name}'")
             midiin = mido.open_input(input_name, callback=cb)
+        except (IOError, OSError) as exc:
+            logging.warning(f"Failed to open MIDI input '{input_name}': {exc}")
 
-            logging.info("Opening output '%s'", output_name)
+            alt = search_midi_device(input_name, is_output=False)
+            if alt:
+                try:
+                    midiin = mido.open_input(alt, callback=cb)
+                except (IOError, OSError) as exc2:
+                    logging.error(f"Fallback failed to open MIDI input '{alt}': {exc2}")
+                    return 3
+            else:
+                logging.error(f"Could not identify any MIDI input device matching '{input_name}'.")
+                return 3
+
+        try:
+            logging.info(f"Opening output '{output_name}'")
             midiout = mido.open_output(output_name)
         except (IOError, OSError) as exc:
-            logging.error("Failed to open MIDI device '%s': %s", input_name, exc)
-            raise
+            logging.warning(f"Failed to open MIDI output '{output_name}': {exc}")
+
+            alt = search_midi_device(output_name, is_output=True)
+            if alt:
+                try:
+                    midiout = mido.open_output(alt)
+                except (IOError, OSError) as exc2:
+                    logging.error(f"Fallback failed to open MIDI output '{alt}': {exc2}")
+                    return 3
+            else:
+                logging.error(f"Could not identify any MIDI output device matching '{output_name}'.")
+                return 3
 
         midiin._rt.set_error_callback(critical_error_callback)
         midiout._rt.set_error_callback(critical_error_callback)
