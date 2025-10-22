@@ -29,6 +29,13 @@ layers:
     - "/ch/07/mix/on"
     - "/ch/09/mix/on"
     - "/ch/15/mix/on"
+    mutegroups: # Very advanced!
+    - "/config/mute/1"
+    - "/config/mute/1"
+    - "/config/mute/1"
+    - "/config/mute/1"
+    - ~
+    - "/config/mute/1"
     meters:
     - 0
     - 1

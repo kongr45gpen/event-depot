@@ -92,6 +92,8 @@ CURRENT_LAYER = 0
 
 METER_CACHE = {}
 
+MUTEGROUP_BUTTONS = {}
+
 
 async def create_osc_cache(configuration, xair):
     global OSC_CACHE, ACTIVE_KEYS
@@ -104,6 +106,7 @@ async def create_osc_cache(configuration, xair):
     for layer in layers:
         keys += layer['encoders'].get(confuse.Sequence(confuse.Optional(str)))
         keys += layer['buttons'].get(confuse.Sequence(confuse.Optional(str)))
+        keys += layer['mutegroups'].get(confuse.Sequence(confuse.Optional(str)))
     
     for key in keys:
         if key:
@@ -312,6 +315,7 @@ def osc_to_midi(address, value, configuration, midiout):
 
     buttons = layer['buttons'].get(confuse.Sequence(confuse.Optional(str)))
     encoders = layer['encoders'].get(confuse.Sequence(confuse.Optional(str)))
+    mutegroups = layer['mutegroups'].get(confuse.Sequence(confuse.Optional(str)))
 
     if address in buttons:
         ix = buttons.index(address)
@@ -347,6 +351,11 @@ def osc_to_midi(address, value, configuration, midiout):
         midi_msg = mido.Message('control_change', channel=0, control=control, value=new_value)
         logging.debug(f"OSC to MIDI: {address}={value} -> {midi_msg}")
         midiout.send(midi_msg)
+
+    for idx, mutegroup in enumerate(mutegroups):
+        if address == mutegroup:
+            MUTEGROUP_BUTTONS[idx] = value
+
 
 async def handle_meters(message, configuration, midiout):
     global CURRENT_LAYER, METER_CACHE
@@ -386,10 +395,45 @@ async def handle_meters(message, configuration, midiout):
 
     # logging.debug(f"Meter values: {meter_values}")
 
+async def periodic_mutegroup_blink(configuration, midiout):
+    blinkomatic = False
+
+    while True:
+        try:
+            layer_config = configuration['layers'][CURRENT_LAYER]
+            buttons = layer_config['buttons'].get(confuse.Sequence(confuse.Optional(str)))
+            mutegroups = layer_config['mutegroups'].get(confuse.Sequence(confuse.Optional(str)))
+
+            for i in range(8):
+                if len(buttons) > i and buttons[i]:
+                    current_mute = not OSC_CACHE.get(buttons[i], 1)
+                    if current_mute:
+                        # There is no touching
+                        continue
+                
+                button_index = BUTTON_IXES[i]
+
+                if blinkomatic:
+                    if i in MUTEGROUP_BUTTONS and MUTEGROUP_BUTTONS[i]:
+                        midi_msg = mido.Message('note_on', channel=0, note=button_index, velocity=127)
+                        midiout.send(midi_msg)
+                else:
+                    button_index = BUTTON_IXES[i]
+                    midi_msg = mido.Message('note_on', channel=0, note=button_index, velocity=0)
+                    midiout.send(midi_msg)
+
+            blinkomatic = not blinkomatic
+
+            await asyncio.sleep(0.243)
+        except Exception as exc:
+            logging.warning(f"Failed to process mutegroup blink: {exc}")
+                
+
 async def clear_midi(midiout):
-    global METER_CACHE
+    global METER_CACHE, MUTEGROUP_BUTTONS
 
     METER_CACHE = {}
+    MUTEGROUP_BUTTONS = {}
 
     for ix in BUTTON_IXES:
         midi_msg = mido.Message('note_on', channel=0, note=ix, velocity=0)
@@ -560,11 +604,14 @@ async def main(argv=None):
         midi_input_task = asyncio.create_task(monitor_midi(stream, midi_queue))
         midi_handle_task = asyncio.create_task(midi_event_handler(cfg, xair, midiout, midi_queue))
 
+        mutegroup_blinkomatic_task = asyncio.create_task(periodic_mutegroup_blink(cfg, midiout))
+
         await asyncio.gather(
             midi_input_task,
             midi_handle_task,
             xair_task,
             osc_task,
+            mutegroup_blinkomatic_task,
             # midi_task,
             midi_keepalive(midiout)
         )
