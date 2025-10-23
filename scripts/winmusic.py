@@ -52,7 +52,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     parser.add_argument("-l", "--lev", dest="lev", type=float,
                         default=3.0,
-                        help="Levenshtein threshold (0-1), default 3")
+                        help="Levenshtein threshold, default 3")
+    
+    parser.add_argument("-n", "--no-server", action="store_true",
+                        help="Run identification once and exit without starting server")
 
     parser.add_argument("-d", "--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("-q", "--quiet", action="store_true", help="Reduce logging to WARNING")
@@ -140,12 +143,12 @@ def create_music_database(music_dir: Path) -> None:
                         break
 
                 # purl/license may be stored in TXXX frames or custom tags
-                for key in ('purl', 'purl:uri', 'website', 'txxx:purl', 'txxx:website'):
+                for key in ('purl', 'purl:uri', 'website', 'txxx:purl', 'txxx:website', 'woaf', 'wors', 'woas', 'wpub'):
                     if key in items and items[key]:
                         meta['purl'] = str(items[key][0]) if isinstance(items[key], (list, tuple)) else str(items[key])
                         break
 
-                for key in ('license', 'licenseurl', 'copyright', 'txxx:license', 'txxx:licenseurl'):
+                for key in ('license', 'licenseurl', 'copyright', 'txxx:license', 'txxx:licenseurl', 'tcop', 'wcop'):
                     if key in items and items[key]:
                         meta['license'] = str(items[key][0]) if isinstance(items[key], (list, tuple)) else str(items[key])
                         break
@@ -172,9 +175,11 @@ def identify(music_db: dict[str, dict], threshold) -> dict:
 
     for title in titles:
         # Try to split title based on - or |
-        parts = re.split(r'\s*[-|]\s*', title)
+        title = title.replace("▶︎", "").strip()
+        parts = re.split(r'\s*[-|—]\s*', title)
         if len(parts) < 2:
             continue
+        print(parts)
 
         # Linear search all songs for match
         for song_path, meta in music_db.items():
@@ -218,6 +223,20 @@ def main(argv: list[str] | None = None) -> int:
     
     _LOG.debug(f"Indexing music files in {ns.music_dir}...")
     music_db = create_music_database(ns.music_dir)
+
+    if ns.no_server:
+        _LOG.info("Running single identification pass (no server mode)...")
+        result = identify(music_db, ns.lev)
+        if result is None:
+            _LOG.error("No match found.")
+            return 1
+        else:
+            _LOG.info(f"Full result: {result}")
+            print(f"Match found!")
+            print(f"Author: {result.get('author')}")
+            print(f"Title: {result.get('title')}")
+            print(f"Path: {result.get('path')}")
+            return 0
 
     # Create a minimal Flask app that exposes a POST /identify endpoint
     app = Flask(__name__)
